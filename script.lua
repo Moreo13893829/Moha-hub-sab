@@ -92,20 +92,13 @@ end
 
 function MohaHub:EstProtege(plot)
     if not plot then return false end
-    -- Check common Attributes
-    if plot:GetAttribute("ShieldActive") or plot:GetAttribute("Locked") or plot:GetAttribute("Private") or plot:GetAttribute("Shield") or plot:GetAttribute("StealProtected") then
-        return true
-    end
-    -- Check common Child Names (recursive)
-    for _, desc in pairs(plot:GetDescendants()) do
-        local n = desc.Name:lower()
-        if desc:IsA("BasePart") and desc.Transparency < 0.9 and (n:find("shield") or n:find("forcefield") or n:find("laser") or n:find("gate") or n:find("lock") or n:find("anti")) then
-            return true
-        end
-        if (desc:IsA("BoolValue") or desc:IsA("StringValue")) and (n:find("locked") or n:find("private") or n:find("shield")) and desc.Value == true then
-            return true
-        end
-    end
+    -- Check uniquement les Attributs du plot (pas de scan récursif = pas de faux positifs)
+    if plot:GetAttribute("ShieldActive") == true then return true end
+    if plot:GetAttribute("Locked") == true then return true end
+    if plot:GetAttribute("Private") == true then return true end
+    if plot:GetAttribute("StealProtected") == true then return true end
+    -- Check ForceField direct (pas récursif)
+    if plot:FindFirstChildOfClass("ForceField") then return true end
     return false
 end
 
@@ -946,9 +939,6 @@ local function TrouverTousPrompts(plot)
 end
 
 local function VerifierProtectionPlot(plot)
-    if MohaHub:EstVide(plot) then
-        return true -- Considéré comme vide
-    end
     return MohaHub:EstProtege(plot)
 end
 
@@ -964,8 +954,7 @@ local function ExecuterAutoGrab()
     local range = MohaHub.Parametres.GrabRange
     local bestPrompt, bestCFrame, nomCible, bestDist, bestVal = nil, nil, "Cible", math.huge, -1
 
-    local plots = DossierPlots:GetChildren()
-    print("[MohaHub] Analyse de " .. #plots .. " plots...")
+    print("[MohaHub] Analyse de " .. #DossierPlots:GetChildren() .. " plots...")
 
     for _, plot in pairs(DossierPlots:GetChildren()) do
         -- Skip notre propre plot
@@ -983,12 +972,7 @@ local function ExecuterAutoGrab()
         -- Trouver prompts de vol
         local prompts = TrouverTousPrompts(plot)
         for _, prompt in pairs(prompts) do
-            -- Filtre de prompt : Doit être un prompt de vol/grab
-            local aText = prompt.ActionText:lower()
-            local pName = prompt.Name:lower()
-            if not (aText:find("steal") or aText:find("voler") or aText:find("grab") or aText:find("prendre") or pName:find("grab")) then
-                continue
-            end
+            -- Accepter TOUS les prompts (le jeu peut avoir n'importe quel texte)
 
             local parentModel = prompt:FindFirstAncestorWhichIsA("Model")
             local holderPart = parentModel and parentModel:FindFirstChild("Holder")
@@ -1685,56 +1669,65 @@ task.spawn(function()
             end
             -- Update info
             for plot, data in pairs(baseEspObjects) do
+                -- Nettoyer si le plot n'existe plus
                 if not plot.Parent or not data.center or not data.center.Parent then
                     data.billboard:Destroy()
                     baseEspObjects[plot] = nil
-                elseif root then
-                    local dist = math.floor((root.Position - data.center.Position).Magnitude)
-                    -- Compter les brainrots dans ce plot
-                    local brainrotCount = 0
-                    for _, desc in pairs(plot:GetDescendants()) do
-                        if desc:IsA("Model") and MohaHub.Heros[desc.Name] then
-                            brainrotCount = brainrotCount + 1
-                        end
-                    end
-                    data.infoLabel.Text = "🧠 " .. brainrotCount .. " brainrots · 📏 " .. dist .. "m"
-
-                    -- Timer de protection steal + Détection Shield/Locked (système exhaustif)
-                    local isP = MohaHub:EstProtege(plot)
-                    local stealTimer = plot:GetAttribute("StealTimer") or plot:GetAttribute("StealCooldown") or plot:GetAttribute("Timer")
-                    
-                    if isP then
-                        data.timerLabel.Text = "🔒 Protégé / Privé"
-                        data.timerLabel.TextColor3 = COLORS.accent1
-                    elseif stealTimer and type(stealTimer) == "number" then
-                        local serverTime = Workspace:GetServerTimeNow()
-                        local remaining = math.max(0, stealTimer - serverTime)
-                        if remaining > 0 then
-                            local mins = math.floor(remaining / 60)
-                            local secs = math.floor(remaining % 60)
-                            data.timerLabel.Text = "⏱ Protection: " .. string.format("%d:%02d", mins, secs)
-                            data.timerLabel.TextColor3 = COLORS.red
-                        else
-                            data.timerLabel.Text = "⏱ Vulnérable !"
-                            data.timerLabel.TextColor3 = COLORS.green
-                        end
-                    else
-                        -- Chercher un timer dans les enfants
-                        local timerVal = nil
-                        for _, child in pairs(plot:GetChildren()) do
-                            if child:IsA("NumberValue") and (child.Name:lower():find("timer") or child.Name:lower():find("cooldown") or child.Name:lower():find("steal")) then
-                                timerVal = child.Value
-                                break
+                else
+                    -- Vérifier si le proprio est toujours là
+                    local currentOwner = MohaHub:ExtraireProprio(plot)
+                    if not currentOwner then
+                        -- Plus de proprio = base vide, on supprime l'ESP
+                        data.billboard:Destroy()
+                        baseEspObjects[plot] = nil
+                    elseif root then
+                        local dist = math.floor((root.Position - data.center.Position).Magnitude)
+                        -- Compter les brainrots dans ce plot
+                        local brainrotCount = 0
+                        for _, desc in pairs(plot:GetDescendants()) do
+                            if desc:IsA("Model") and MohaHub.Heros[desc.Name] then
+                                brainrotCount = brainrotCount + 1
                             end
                         end
-                        if timerVal and timerVal > 0 then
-                            local mins = math.floor(timerVal / 60)
-                            local secs = math.floor(timerVal % 60)
-                            data.timerLabel.Text = "⏱ " .. string.format("%d:%02d", mins, secs)
-                            data.timerLabel.TextColor3 = COLORS.accent2
+                        data.infoLabel.Text = "🧠 " .. brainrotCount .. " brainrots · 📏 " .. dist .. "m"
+
+                        -- Timer de protection steal
+                        local isP = MohaHub:EstProtege(plot)
+                        local stealTimer = plot:GetAttribute("StealTimer") or plot:GetAttribute("StealCooldown") or plot:GetAttribute("Timer")
+                        
+                        if isP then
+                            data.timerLabel.Text = "🔒 Protégé / Privé"
+                            data.timerLabel.TextColor3 = COLORS.accent1
+                        elseif stealTimer and type(stealTimer) == "number" then
+                            local serverTime = Workspace:GetServerTimeNow()
+                            local remaining = math.max(0, stealTimer - serverTime)
+                            if remaining > 0 then
+                                local mins = math.floor(remaining / 60)
+                                local secs = math.floor(remaining % 60)
+                                data.timerLabel.Text = "⏱ Protection: " .. string.format("%d:%02d", mins, secs)
+                                data.timerLabel.TextColor3 = COLORS.red
+                            else
+                                data.timerLabel.Text = "⏱ Vulnérable !"
+                                data.timerLabel.TextColor3 = COLORS.green
+                            end
                         else
-                            data.timerLabel.Text = "⏱ Prêt à voler"
-                            data.timerLabel.TextColor3 = COLORS.green
+                            -- Chercher un timer dans les enfants
+                            local timerVal = nil
+                            for _, child in pairs(plot:GetChildren()) do
+                                if child:IsA("NumberValue") and (child.Name:lower():find("timer") or child.Name:lower():find("cooldown") or child.Name:lower():find("steal")) then
+                                    timerVal = child.Value
+                                    break
+                                end
+                            end
+                            if timerVal and timerVal > 0 then
+                                local mins = math.floor(timerVal / 60)
+                                local secs = math.floor(timerVal % 60)
+                                data.timerLabel.Text = "⏱ " .. string.format("%d:%02d", mins, secs)
+                                data.timerLabel.TextColor3 = COLORS.accent2
+                            else
+                                data.timerLabel.Text = "⏱ Prêt à voler"
+                                data.timerLabel.TextColor3 = COLORS.green
+                            end
                         end
                     end
                 end
