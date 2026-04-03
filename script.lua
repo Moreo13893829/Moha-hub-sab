@@ -632,31 +632,54 @@ CreateInfoCard(p4, "⚡ Moteur de vol", "5 méthodes: ProximityPrompt > Remote >
 CreateInfoCard(p4, "📡 Remote Status", RemoteGrab and ("✅ Trouvé: "..RemoteGrab:GetFullName()) or "❌ Non trouvé")
 CreateInfoCard(p4, "🧠 Brainrots", "Scan depuis ReplicatedStorage.Models.Animals\nNombre détecté: "..tostring(#BrainrotsScannes))
 
--- ====================== BARRE DE GRAB EN HAUT ======================
+-- ====================== BARRE DE GRAB EN HAUT (TOUJOURS VISIBLE) ======================
+-- Nettoyer ancienne barre
+for _, g in pairs(HubParent:GetChildren()) do
+    if g.Name == "MohaGrabBar" then g:Destroy() end
+end
+
 local GrabBarGui = Instance.new("ScreenGui")
 GrabBarGui.Name = "MohaGrabBar"
 GrabBarGui.Parent = HubParent
 GrabBarGui.ResetOnSpawn = false
 GrabBarGui.Enabled = false
+GrabBarGui.DisplayOrder = 999
 
 local GrabBarFrame = Instance.new("Frame")
-GrabBarFrame.Size = UDim2.new(1, 0, 0, 38)
+GrabBarFrame.Size = UDim2.new(1, 0, 0, 44)
 GrabBarFrame.Position = UDim2.new(0, 0, 0, 0)
-GrabBarFrame.BackgroundColor3 = Color3.fromRGB(10, 8, 20)
+GrabBarFrame.BackgroundColor3 = Color3.fromRGB(8, 6, 18)
 GrabBarFrame.BorderSizePixel = 0
 GrabBarFrame.Parent = GrabBarGui
 
-local grabGrad = Instance.new("UIGradient")
-grabGrad.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(20, 10, 40)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(10, 5, 25))
+local grabBarGrad = Instance.new("UIGradient")
+grabBarGrad.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(25, 10, 50)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(8, 6, 18)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(25, 10, 50))
 })
-grabGrad.Parent = GrabBarFrame
+grabBarGrad.Parent = GrabBarFrame
 
+-- Ligne lumineuse en bas de la barre
+local GrabBarGlow = Instance.new("Frame")
+GrabBarGlow.Size = UDim2.new(1, 0, 0, 2)
+GrabBarGlow.Position = UDim2.new(0, 0, 1, -2)
+GrabBarGlow.BackgroundColor3 = COLORS.accent1
+GrabBarGlow.BorderSizePixel = 0
+GrabBarGlow.Parent = GrabBarFrame
+local glowGrad = Instance.new("UIGradient")
+glowGrad.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, COLORS.accent1),
+    ColorSequenceKeypoint.new(0.5, COLORS.accent2),
+    ColorSequenceKeypoint.new(1, COLORS.accent3)
+})
+glowGrad.Parent = GrabBarGlow
+
+-- Barre de progression
 local GrabProgressBg = Instance.new("Frame")
-GrabProgressBg.Size = UDim2.new(1, -20, 0, 6)
-GrabProgressBg.Position = UDim2.new(0, 10, 1, -10)
-GrabProgressBg.BackgroundColor3 = Color3.fromRGB(40, 30, 60)
+GrabProgressBg.Size = UDim2.new(1, -24, 0, 8)
+GrabProgressBg.Position = UDim2.new(0, 12, 1, -14)
+GrabProgressBg.BackgroundColor3 = Color3.fromRGB(30, 25, 50)
 GrabProgressBg.BorderSizePixel = 0
 GrabProgressBg.Parent = GrabBarFrame
 Instance.new("UICorner", GrabProgressBg).CornerRadius = UDim.new(1, 0)
@@ -671,29 +694,42 @@ Instance.new("UICorner", GrabProgressFill).CornerRadius = UDim.new(1, 0)
 local grabFillGrad = Instance.new("UIGradient")
 grabFillGrad.Color = ColorSequence.new({
     ColorSequenceKeypoint.new(0, COLORS.accent1),
-    ColorSequenceKeypoint.new(1, COLORS.accent2)
+    ColorSequenceKeypoint.new(0.5, COLORS.accent2),
+    ColorSequenceKeypoint.new(1, COLORS.accent3)
 })
 grabFillGrad.Parent = GrabProgressFill
 
+-- Icône animée
+local GrabIcon = Instance.new("TextLabel")
+GrabIcon.Size = UDim2.new(0, 30, 0, 24)
+GrabIcon.Position = UDim2.new(0, 10, 0, 2)
+GrabIcon.BackgroundTransparency = 1
+GrabIcon.Text = "⚡"
+GrabIcon.TextSize = 18
+GrabIcon.Font = Enum.Font.GothamBold
+GrabIcon.Parent = GrabBarFrame
+
+-- Status du grab
 local GrabStatusLabel = Instance.new("TextLabel")
-GrabStatusLabel.Size = UDim2.new(0.6, 0, 0, 22)
-GrabStatusLabel.Position = UDim2.new(0, 14, 0, 2)
+GrabStatusLabel.Size = UDim2.new(0.5, 0, 0, 24)
+GrabStatusLabel.Position = UDim2.new(0, 40, 0, 2)
 GrabStatusLabel.BackgroundTransparency = 1
-GrabStatusLabel.Text = "⚡ Recherche..."
+GrabStatusLabel.Text = "Recherche de cible..."
 GrabStatusLabel.TextColor3 = COLORS.textPrimary
 GrabStatusLabel.Font = Enum.Font.GothamBold
-GrabStatusLabel.TextSize = 13
+GrabStatusLabel.TextSize = 14
 GrabStatusLabel.TextXAlignment = Enum.TextXAlignment.Left
 GrabStatusLabel.Parent = GrabBarFrame
 
+-- Timer
 local GrabTimeLabel = Instance.new("TextLabel")
-GrabTimeLabel.Size = UDim2.new(0, 100, 0, 22)
-GrabTimeLabel.Position = UDim2.new(1, -110, 0, 2)
+GrabTimeLabel.Size = UDim2.new(0, 120, 0, 24)
+GrabTimeLabel.Position = UDim2.new(1, -130, 0, 2)
 GrabTimeLabel.BackgroundTransparency = 1
-GrabTimeLabel.Text = "0.0s"
+GrabTimeLabel.Text = ""
 GrabTimeLabel.TextColor3 = COLORS.accent3
 GrabTimeLabel.Font = Enum.Font.GothamBold
-GrabTimeLabel.TextSize = 13
+GrabTimeLabel.TextSize = 14
 GrabTimeLabel.TextXAlignment = Enum.TextXAlignment.Right
 GrabTimeLabel.Parent = GrabBarFrame
 
@@ -833,6 +869,7 @@ local function LirePrixOverhead(model)
 end
 
 local enCoursDeGrab = false
+local searchDots = 0
 
 local function ExecuterAutoGrab()
     if enCoursDeGrab then return end
@@ -840,23 +877,21 @@ local function ExecuterAutoGrab()
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if not root or not DossierPlots then return end
 
+    -- La barre est TOUJOURS visible quand auto-grab est actif
+    GrabBarGui.Enabled = true
+
     local mode = MohaHub.Parametres.GrabMode
     local range = MohaHub.Parametres.GrabRange
     local cibleHitbox, nomCible, plotCible = nil, "Cible", nil
     local minDist, maxVal = range, -1
 
-    -- FIX: Les plots ont des noms UUID (ex: 09f8f260-f988-...)
-    -- Chaque plot contient un StealHitbox et des Models d'animaux
     for _, plot in pairs(DossierPlots:GetChildren()) do
-        -- Ignorer son propre plot
         local owner = plot:FindFirstChild("Owner") or plot:FindFirstChild("PlotOwner")
         if owner then
             if owner:IsA("ObjectValue") and owner.Value == LocalPlayer then continue end
             if owner:IsA("StringValue") and owner.Value == LocalPlayer.Name then continue end
         end
 
-        -- Chercher StealHitbox (peut être dans des sous-dossiers comme FirstFloor, SecondFloor...)
-        -- Les bases ont: FirstFloor/StealHitbox, SecondFloor/StealHitbox, ThirdFloor/StealHitbox
         local hitboxes = {}
         for _, desc in pairs(plot:GetDescendants()) do
             if desc.Name == "StealHitbox" and desc:IsA("BasePart") then
@@ -888,47 +923,67 @@ local function ExecuterAutoGrab()
         end
     end
 
-    if not cibleHitbox or not plotCible then GrabBarGui.Enabled = false; return end
+    -- Si pas de cible: montrer état de recherche animé
+    if not cibleHitbox or not plotCible then
+        searchDots = (searchDots % 3) + 1
+        local dots = string.rep(".", searchDots)
+        GrabStatusLabel.Text = "Recherche de cible" .. dots
+        GrabStatusLabel.TextColor3 = COLORS.textSecondary
+        GrabTimeLabel.Text = "Range: " .. MohaHub.Parametres.GrabRange .. " studs"
+        GrabProgressFill.Size = UDim2.new(0, 0, 1, 0)
+        GrabBarGlow.BackgroundColor3 = COLORS.accent3
+        return
+    end
 
+    -- Cible trouvée ! Lancer le grab
     enCoursDeGrab = true
-    GrabBarGui.Enabled = true
-    GrabStatusLabel.Text = "⚡ Vol: "..nomCible
+    GrabStatusLabel.Text = "⚡ VOL: " .. nomCible
+    GrabStatusLabel.TextColor3 = COLORS.accent2
     GrabProgressFill.Size = UDim2.new(0, 0, 1, 0)
+    GrabBarGlow.BackgroundColor3 = COLORS.accent2
 
     local temps = MohaHub.Parametres.GrabDelay
     local startTime = tick()
 
-    -- Animate progress bar
+    -- Animer la barre de progression
     local tween = TweenService:Create(GrabProgressFill, TweenInfo.new(temps, Enum.EasingStyle.Linear), {Size = UDim2.new(1, 0, 1, 0)})
     tween:Play()
 
-    -- Update time label
+    -- Timer en temps réel
     local conn
     conn = RunService.RenderStepped:Connect(function()
         local elapsed = tick() - startTime
         if elapsed >= temps then
-            GrabTimeLabel.Text = string.format("%.1fs", temps)
-            conn:Disconnect()
+            GrabTimeLabel.Text = string.format("%.1fs / %.1fs", temps, temps)
+            if conn.Connected then conn:Disconnect() end
         else
             GrabTimeLabel.Text = string.format("%.1fs / %.1fs", elapsed, temps)
         end
     end)
 
     tween.Completed:Wait()
-    if conn.Connected then conn:Disconnect() end
+    if conn and conn.Connected then conn:Disconnect() end
 
-    -- =====================================================
-    -- MULTI-MÉTHODE STEAL (adapté au vrai protocole serveur)
-    -- Le serveur attend: RemoteGrab:FireServer("Grab", podiumIndex)
-    -- podiumIndex = numéro du podium (1, 2, 3, etc.)
-    -- Le serveur utilise _G.playerPlots[userId] pour trouver le plot
-    -- => le joueur DOIT être physiquement près du StealHitbox
-    -- =====================================================
+    GrabStatusLabel.Text = "✅ Exécution du vol..."
+    GrabBarGlow.BackgroundColor3 = COLORS.green
+
+    -- ===========================================================
+    -- TELEPORT BREF vers le StealHitbox pour activer _G.playerPlots
+    -- Le serveur a besoin que le joueur soit SUR la hitbox
+    -- ===========================================================
+    local positionOriginale = root.CFrame
+    pcall(function()
+        root.CFrame = cibleHitbox.CFrame
+    end)
+    task.wait(0.15) -- Laisser le serveur détecter notre présence
+
+    -- ===========================================================
+    -- MULTI-MÉTHODE STEAL
+    -- ===========================================================
     local ok = false
 
-    -- MÉTHODE 1: ProximityPrompt (le plus fiable - simule l'interaction du jeu)
+    -- MÉTHODE 1: ProximityPrompt
     if not ok then
-        -- Chercher TOUS les ProximityPrompts dans le plot cible
         local prompts = {}
         for _, desc in pairs(plotCible:GetDescendants()) do
             if desc:IsA("ProximityPrompt") then
@@ -937,10 +992,7 @@ local function ExecuterAutoGrab()
         end
         for _, prompt in pairs(prompts) do
             pcall(function()
-                local oH = prompt.HoldDuration
-                local oM = prompt.MaxActivationDistance
-                local oE = prompt.Enabled
-                local oR = prompt.RequiresLineOfSight
+                local oH, oM, oE, oR = prompt.HoldDuration, prompt.MaxActivationDistance, prompt.Enabled, prompt.RequiresLineOfSight
                 prompt.HoldDuration = 0
                 prompt.MaxActivationDistance = 9999
                 prompt.Enabled = true
@@ -962,16 +1014,15 @@ local function ExecuterAutoGrab()
         end
     end
 
-    -- MÉTHODE 2: Remote "Grab" avec podiumIndex (protocole serveur réel)
-    -- Le serveur attend: FireServer("Grab", podiumIndex) - PAS le nom du plot!
+    -- MÉTHODE 2: Remote "Grab" avec podiumIndex
+    -- On est maintenant SUR la hitbox, donc _G.playerPlots est set
     if not ok and RemoteGrab then
         pcall(function()
-            -- Essayer les podium indices 1 à 20 (couvre FirstFloor, SecondFloor, ThirdFloor)
             for podiumIdx = 1, 20 do
                 pcall(function()
                     RemoteGrab:FireServer("Grab", podiumIdx)
                 end)
-                task.wait(0.05)
+                task.wait(0.02)
             end
             ok = true
         end)
@@ -995,7 +1046,16 @@ local function ExecuterAutoGrab()
         end
     end
 
-    GrabBarGui.Enabled = false
+    -- Revenir à la position originale
+    task.wait(0.1)
+    pcall(function()
+        root.CFrame = positionOriginale
+    end)
+
+    -- Reset état de la barre
+    GrabStatusLabel.Text = "✅ Vol terminé !"
+    GrabStatusLabel.TextColor3 = COLORS.green
+    task.wait(0.5)
     enCoursDeGrab = false
 end
 
@@ -1108,7 +1168,6 @@ local function LireRareteDepuisOverhead(model)
 end
 
 local function CreateESPForModel(model)
-    -- Trouver la partie principale pour attacher le billboard
     local part = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
     if not part then return end
     if espObjects[model] then return end
@@ -1116,7 +1175,6 @@ local function CreateESPForModel(model)
     local brainrotName = model.Name
     local heroData = MohaHub.Heros[brainrotName]
 
-    -- Lire prix et rareté depuis overhead OU depuis nos données scannées
     local prix = LirePrixDepuisOverhead(model)
     if not prix and heroData then prix = heroData.Prix end
     prix = prix or "?"
@@ -1125,94 +1183,68 @@ local function CreateESPForModel(model)
     if not rarete and heroData then rarete = heroData.Rarete end
     rarete = rarete or "Normal"
 
-    -- Trouver le propriétaire du plot pour l'afficher
-    local plotOwnerName = "?"
-    local parent = model.Parent
-    while parent and parent ~= Workspace do
-        local ownerVal = parent:FindFirstChild("Owner") or parent:FindFirstChild("PlotOwner")
-        if ownerVal then
-            if ownerVal:IsA("ObjectValue") and ownerVal.Value and ownerVal.Value:IsA("Player") then
-                plotOwnerName = ownerVal.Value.Name
-            elseif ownerVal:IsA("StringValue") then
-                plotOwnerName = ownerVal.Value
-            end
-            break
-        end
-        parent = parent.Parent
-    end
-
     local rarColor = RARITY_COLORS[rarete] or COLORS.espColor
 
+    -- ESP compact et joli
     local bb = Instance.new("BillboardGui")
-    bb.Name = "BrainrotESP"
+    bb.Name = "ESP"
     bb.Adornee = part
-    bb.Size = UDim2.new(0, 200, 0, 68)
-    bb.StudsOffset = Vector3.new(0, 4, 0)
+    bb.Size = UDim2.new(0, 140, 0, 38)
+    bb.StudsOffset = Vector3.new(0, 3, 0)
     bb.AlwaysOnTop = true
     bb.Parent = espFolder
 
     local bg = Instance.new("Frame")
     bg.Size = UDim2.new(1, 0, 1, 0)
-    bg.BackgroundColor3 = Color3.fromRGB(10, 8, 20)
-    bg.BackgroundTransparency = 0.15
+    bg.BackgroundColor3 = Color3.fromRGB(8, 6, 16)
+    bg.BackgroundTransparency = 0.1
     bg.BorderSizePixel = 0
     bg.Parent = bb
-    Instance.new("UICorner", bg).CornerRadius = UDim.new(0, 8)
+    Instance.new("UICorner", bg).CornerRadius = UDim.new(0, 6)
 
+    -- Bordure avec couleur de rareté
     local stroke = Instance.new("UIStroke")
     stroke.Parent = bg
     stroke.Color = rarColor
-    stroke.Thickness = 2
-    stroke.Transparency = 0.2
+    stroke.Thickness = 1.5
+    stroke.Transparency = 0.15
 
-    -- Nom du brainrot
+    -- Barre colorée en haut (accent rareté)
+    local topBar = Instance.new("Frame")
+    topBar.Size = UDim2.new(1, 0, 0, 2)
+    topBar.Position = UDim2.new(0, 0, 0, 0)
+    topBar.BackgroundColor3 = rarColor
+    topBar.BorderSizePixel = 0
+    topBar.Parent = bg
+    Instance.new("UICorner", topBar).CornerRadius = UDim.new(0, 6)
+
+    -- Nom du brainrot (1ère ligne)
     local nameL = Instance.new("TextLabel")
-    nameL.Size = UDim2.new(1, -10, 0, 18)
-    nameL.Position = UDim2.new(0, 5, 0, 3)
+    nameL.Size = UDim2.new(1, -8, 0, 16)
+    nameL.Position = UDim2.new(0, 4, 0, 4)
     nameL.BackgroundTransparency = 1
-    nameL.Text = "🧠 "..brainrotName
+    nameL.Text = brainrotName
     nameL.TextColor3 = rarColor
     nameL.Font = Enum.Font.GothamBold
-    nameL.TextSize = 13
+    nameL.TextSize = 11
     nameL.TextScaled = true
+    nameL.TextXAlignment = Enum.TextXAlignment.Left
     nameL.Parent = bg
 
-    -- Rareté + Prix
-    local infoL = Instance.new("TextLabel")
-    infoL.Size = UDim2.new(1, -10, 0, 14)
-    infoL.Position = UDim2.new(0, 5, 0, 22)
-    infoL.BackgroundTransparency = 1
-    infoL.Text = rarete.." | 💰 "..tostring(prix)
-    infoL.TextColor3 = COLORS.textSecondary
-    infoL.Font = Enum.Font.GothamSemibold
-    infoL.TextSize = 11
-    infoL.TextScaled = true
-    infoL.Parent = bg
-
-    -- Propriétaire
-    local ownerL = Instance.new("TextLabel")
-    ownerL.Size = UDim2.new(1, -10, 0, 12)
-    ownerL.Position = UDim2.new(0, 5, 0, 37)
-    ownerL.BackgroundTransparency = 1
-    ownerL.Text = "👤 "..plotOwnerName
-    ownerL.TextColor3 = Color3.fromRGB(200, 180, 255)
-    ownerL.Font = Enum.Font.Gotham
-    ownerL.TextSize = 10
-    ownerL.TextScaled = true
-    ownerL.Parent = bg
-
-    -- Distance
+    -- Prix + Distance (2ème ligne)
     local distL = Instance.new("TextLabel")
-    distL.Size = UDim2.new(1, -10, 0, 12)
-    distL.Position = UDim2.new(0, 5, 0, 52)
+    distL.Size = UDim2.new(1, -8, 0, 13)
+    distL.Position = UDim2.new(0, 4, 0, 21)
     distL.BackgroundTransparency = 1
-    distL.Text = "..."
-    distL.TextColor3 = COLORS.accent3
+    distL.Text = tostring(prix) .. " · ..."
+    distL.TextColor3 = COLORS.textSecondary
     distL.Font = Enum.Font.Gotham
-    distL.TextSize = 10
+    distL.TextSize = 9
+    distL.TextScaled = true
+    distL.TextXAlignment = Enum.TextXAlignment.Left
     distL.Parent = bg
 
-    espObjects[model] = {billboard = bb, distLabel = distL, part = part}
+    espObjects[model] = {billboard = bb, distLabel = distL, part = part, prix = tostring(prix)}
 end
 
 local function ClearESP()
@@ -1262,7 +1294,7 @@ task.spawn(function()
                     espObjects[model] = nil
                 elseif root and data.part then
                     local dist = math.floor((root.Position - data.part.Position).Magnitude)
-                    data.distLabel.Text = "📍 "..dist.." studs"
+                    data.distLabel.Text = (data.prix or "?") .. " · " .. dist .. "m"
                 end
             end
         else
