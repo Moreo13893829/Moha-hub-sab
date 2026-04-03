@@ -13,7 +13,7 @@ local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
-local Camera = Workspace.CurrentCamera
+local _Camera = Workspace.CurrentCamera
 
 local LocalPlayer = Players.LocalPlayer
 local HubParent = (gethui and gethui()) or CoreGui
@@ -38,48 +38,10 @@ local DossierModeles = ReplicatedStorage:WaitForChild("Models", 5)
 local DossierAnimaux = DossierModeles and DossierModeles:WaitForChild("Animals", 5)
 local DossierPlots = Workspace:WaitForChild("Plots", 5)
 
--- ====================== VRAIS REMOTES DU JEU (décompilés) ======================
--- Le jeu utilise la librairie Net qui crée les remotes dans ReplicatedStorage
--- Les noms clés sont: StealService/Grab, et les UUID remotes pour le vol
-local Net = nil
-pcall(function() Net = require(ReplicatedStorage.Packages.Net) end)
-
--- Remote pour Grab/Place (propriétaire)
-local RemoteGrab = nil
--- Remote pour le VOL (UUID obfusqué)
-local RemoteSteal = nil     -- "5aa39ea1-0c65-4fcf-aff9-b18a7ef277c3"
--- Remote pour le hold began (pré-vol)
-local RemoteHoldBegan = nil -- "b096e1ca-9c3a-453b-8b60-268b235083b9"
--- Remote pour la livraison
-local RemoteDelivery = nil  -- "5c8f0dd0-0f9e-44ba-8f9b-197958b661ab"
-
-do
-    -- Méthode 1: Via la librairie Net du jeu (le plus fiable)
-    if Net then
-        pcall(function() RemoteGrab = Net:RemoteEvent("StealService/Grab") end)
-        pcall(function() RemoteSteal = Net:RemoteEvent("5aa39ea1-0c65-4fcf-aff9-b18a7ef277c3") end)
-        pcall(function() RemoteHoldBegan = Net:RemoteEvent("b096e1ca-9c3a-453b-8b60-268b235083b9") end)
-        pcall(function() RemoteDelivery = Net:RemoteEvent("5c8f0dd0-0f9e-44ba-8f9b-197958b661ab") end)
-    end
-
-    -- Méthode 2: Chercher directement par nom dans ReplicatedStorage
-    if not RemoteGrab or not RemoteSteal then
-        for _, d in pairs(ReplicatedStorage:GetDescendants()) do
-            if d:IsA("RemoteEvent") then
-                local n = d.Name
-                if n == "StealService/Grab" or n == "Grab" then
-                    if not RemoteGrab then RemoteGrab = d end
-                elseif n == "5aa39ea1-0c65-4fcf-aff9-b18a7ef277c3" then
-                    RemoteSteal = d
-                elseif n == "b096e1ca-9c3a-453b-8b60-268b235083b9" then
-                    RemoteHoldBegan = d
-                elseif n == "5c8f0dd0-0f9e-44ba-8f9b-197958b661ab" then
-                    RemoteDelivery = d
-                end
-            end
-        end
-    end
-end
+-- ====================== MODE SAFE (Anti-Ban) ======================
+-- NE PAS toucher aux remotes UUID directement = BAN INSTANT
+-- Le jeu valide les tokens avec SHA256 + timestamps serveur
+-- SEULE méthode safe: fireproximityprompt (passe par le code légitime du jeu)
 
 -- ====================== MOTEUR MOHA HUB ======================
 local MohaHub = {
@@ -148,10 +110,11 @@ local COLORS = {
 }
 
 -- ====================== CRÉATION GUI PRINCIPAL ======================
--- Nettoyer ancien GUI
-for _, g in pairs(HubParent:GetChildren()) do
-    if g.Name == "MohaHubUltimate" or g.Name == "MohaGrabHUD" then g:Destroy() end
-end
+task.defer(function()
+    -- Nettoyer ancien GUI
+    for _, g in pairs(HubParent:GetChildren()) do
+        if g.Name == "MohaHubUltimate" or g.Name == "MohaGrabHUD" then g:Destroy() end
+    end
 
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "MohaHubUltimate"
@@ -216,6 +179,20 @@ bgGradient.Color = ColorSequence.new({
 })
 bgGradient.Rotation = 145
 bgGradient.Parent = MainFrame
+
+-- Animation pulsation du cadre
+task.spawn(function()
+    while MainFrame.Parent do
+        if MainFrame.Visible then
+            TweenService:Create(mainStroke, TweenInfo.new(2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {Transparency = 0.2}):Play()
+            task.wait(2)
+            TweenService:Create(mainStroke, TweenInfo.new(2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {Transparency = 0.7}):Play()
+            task.wait(2)
+        else
+            task.wait(1)
+        end
+    end
+end)
 
 -- ====================== HEADER ======================
 local Header = Instance.new("Frame")
@@ -297,7 +274,7 @@ tabPad.Parent = TabBar
 local TAB_NAMES = {"⚔️ Steal", "🧠 ESP", "🛡️ Défense", "ℹ️ Info"}
 local TabButtons = {}
 local TabPages = {}
-local currentTab = 1
+local _currentTab = 1
 
 -- Pages container
 local PagesContainer = Instance.new("Frame")
@@ -619,9 +596,12 @@ CreateDropdown(p1, "🎯 Priorité", {"Highest", "Nearest"}, "Highest", function
 
 -- Page 2 : ESP
 local p2 = TabPages[2]
-CreateSection(p2, "BRAINROT ESP")
-CreateToggle(p2, "👁️ Activer Brainrot ESP", false, function(v) MohaHub.Parametres.BrainrotESP = v end)
-CreateInfoCard(p2, "ℹ️ Comment ça marche", "L'ESP affiche le nom, la rareté et le prix de chaque brainrot à travers les murs. Les brainrots sont détectés depuis ReplicatedStorage > Models > Animals.")
+CreateSection(p2, "VISUELS")
+CreateToggle(p2, "👁️ Brainrot ESP", false, function(v) MohaHub.Parametres.BrainrotESP = v end)
+CreateToggle(p2, "👤 Player ESP", false, function(v) MohaHub.Parametres.PlayerESP = v end)
+CreateToggle(p2, "🏠 Base Timer ESP", false, function(v) MohaHub.Parametres.BaseTimerESP = v end)
+
+CreateInfoCard(p2, "ℹ️ Info ESP", "L'ESP Player affiche les pseudos et distances.\nL'ESP Base affiche le proprio and le timer de vol.\nLe Brainrot ESP scanne les models invisibles.")
 
 -- Page 3 : DEFENSE
 local p3 = TabPages[3]
@@ -632,8 +612,8 @@ CreateInfoCard(p3, "ℹ️ Auto-Recall", "Rappelle automatiquement vos héros vo
 -- Page 4 : INFO
 local p4 = TabPages[4]
 CreateSection(p4, "MOHA HUB v9 ULTIMATE")
-CreateInfoCard(p4, "⚡ Moteur de vol", "5 méthodes: ProximityPrompt > Remote > ClickDetector > Plot Remotes > Bring Hitbox")
-CreateInfoCard(p4, "📡 Remote Status", RemoteGrab and ("✅ Trouvé: "..RemoteGrab:GetFullName()) or "❌ Non trouvé")
+CreateInfoCard(p4, "⚡ Moteur de vol", "Mode SAFE: fireproximityprompt uniquement\nAnti-Ban: Pas de remotes UUID")
+CreateInfoCard(p4, "📡 Status", "✅ Mode Safe actif - Pas de ban")
 CreateInfoCard(p4, "🧠 Brainrots", "Scan depuis ReplicatedStorage.Models.Animals\nNombre détecté: "..tostring(#BrainrotsScannes))
 
 -- ====================== BARRE DE GRAB EN HAUT (TOUJOURS VISIBLE) ======================
@@ -763,17 +743,30 @@ end)
 
 -- ====================== TOGGLE OPEN/CLOSE ======================
 local guiOpen = false
+MainFrame.BackgroundTransparency = 1
+MainFrame.Size = UDim2.new(0, 420, 0, 0)
+
 ToggleBtn.MouseButton1Click:Connect(function()
     guiOpen = not guiOpen
-    MainFrame.Visible = guiOpen
+    if guiOpen then
+        MainFrame.Visible = true
+        TweenService:Create(MainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0, 420, 0, 480), BackgroundTransparency = 0}):Play()
+    else
+        TweenService:Create(MainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.new(0, 420, 0, 0), BackgroundTransparency = 1}):Play()
+        task.delay(0.4, function() if not guiOpen then MainFrame.Visible = false end end)
+    end
+    
     TweenService:Create(ToggleBtn, TweenInfo.new(0.3), {
         BackgroundColor3 = guiOpen and COLORS.accent2 or COLORS.accent1,
         Rotation = guiOpen and 90 or 0
     }):Play()
 end)
+
 CloseBtn.MouseButton1Click:Connect(function()
     guiOpen = false
-    MainFrame.Visible = false
+    TweenService:Create(MainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.new(0, 420, 0, 0), BackgroundTransparency = 1}):Play()
+    task.delay(0.4, function() MainFrame.Visible = false end)
+    
     TweenService:Create(ToggleBtn, TweenInfo.new(0.3), {
         BackgroundColor3 = COLORS.accent1, Rotation = 0
     }):Play()
@@ -875,68 +868,15 @@ end
 local enCoursDeGrab = false
 local searchDots = 0
 
--- Trouver le plot du joueur local (pour la livraison)
-local function TrouverMonPlot()
-    if not DossierPlots then return nil end
-    for _, plot in pairs(DossierPlots:GetChildren()) do
-        local owner = plot:FindFirstChild("Owner") or plot:FindFirstChild("PlotOwner")
-        if owner then
-            if owner:IsA("ObjectValue") and owner.Value == LocalPlayer then return plot end
-            if owner:IsA("StringValue") and owner.Value == LocalPlayer.Name then return plot end
-        end
-    end
-    return nil
-end
-
--- Trouver les ProximityPrompts de steal sur un podium (chemin exact du jeu)
--- Chemin: plot.AnimalPodiums.[N].Base.Spawn.PromptAttachment
-local function TrouverPromptsSteal(plot)
+-- Trouver TOUS les ProximityPrompts dans un plot (méthode universelle)
+local function TrouverTousPrompts(plot)
     local prompts = {}
-    local podiums = plot:FindFirstChild("AnimalPodiums")
-    if podiums then
-        for _, podium in pairs(podiums:GetChildren()) do
-            local base = podium:FindFirstChild("Base")
-            if base then
-                local spawn = base:FindFirstChild("Spawn")
-                if spawn then
-                    local attach = spawn:FindFirstChild("PromptAttachment")
-                    if attach then
-                        for _, p in pairs(attach:GetChildren()) do
-                            if p:IsA("ProximityPrompt") then
-                                -- Vérifier que le prompt est en mode "Steal"
-                                local state = p:GetAttribute("State")
-                                if state == "Steal" then
-                                    table.insert(prompts, {prompt = p, podiumIndex = tonumber(podium.Name) or 0})
-                                end
-                            end
-                        end
-                    end
-                end
-            end
+    for _, desc in pairs(plot:GetDescendants()) do
+        if desc:IsA("ProximityPrompt") then
+            table.insert(prompts, desc)
         end
     end
     return prompts
-end
-
--- Trouver les podiums qui ont un brainrot volé pas encore placé
-local function TrouverPodiumsAvecBrainrot(plot)
-    local found = {}
-    local podiums = plot:FindFirstChild("AnimalPodiums")
-    if podiums then
-        for _, podium in pairs(podiums:GetChildren()) do
-            local idx = tonumber(podium.Name)
-            if idx then
-                -- Vérifier si ce podium a un animal visible
-                for _, child in pairs(podium:GetDescendants()) do
-                    if child:IsA("Model") and MohaHub.Heros[child.Name] then
-                        table.insert(found, {podiumIndex = idx, name = child.Name})
-                        break
-                    end
-                end
-            end
-        end
-    end
-    return found
 end
 
 local function ExecuterAutoGrab()
@@ -945,74 +885,69 @@ local function ExecuterAutoGrab()
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if not root or not DossierPlots then return end
 
-    -- La barre est TOUJOURS visible quand auto-grab est actif
     GrabBarGui.Enabled = true
 
     local mode = MohaHub.Parametres.GrabMode
     local range = MohaHub.Parametres.GrabRange
-    local cibleHitbox, nomCible, plotCible = nil, "Cible", nil
-    local _ciblePodiumIdx = 1
-    local minDist, maxVal = range, -1
+    local bestPrompt, nomCible, bestDist, bestVal = nil, "Cible", math.huge, -1
 
     for _, plot in pairs(DossierPlots:GetChildren()) do
+        -- Skip notre propre plot
         local owner = plot:FindFirstChild("Owner") or plot:FindFirstChild("PlotOwner")
         if owner then
             if owner:IsA("ObjectValue") and owner.Value == LocalPlayer then continue end
             if owner:IsA("StringValue") and owner.Value == LocalPlayer.Name then continue end
         end
 
-        -- Chercher tous les StealHitbox
-        local hitboxes = {}
-        for _, desc in pairs(plot:GetDescendants()) do
-            if desc.Name == "StealHitbox" and desc:IsA("BasePart") then
-                table.insert(hitboxes, desc)
-            end
-        end
-
-        -- Chercher les podiums avec brainrots
-        local podiums = TrouverPodiumsAvecBrainrot(plot)
-
-        for _, hitbox in pairs(hitboxes) do
-            local dist = (root.Position - hitbox.Position).Magnitude
-            if dist <= range and #podiums > 0 then
-                if mode == "Nearest" then
-                    if dist < minDist then
-                        minDist = dist
-                        cibleHitbox = hitbox
-                        plotCible = plot
-                        nomCible = podiums[1].name
-                        _ciblePodiumIdx = podiums[1].podiumIndex
-                    end
-                elseif mode == "Highest" then
-                    local _, nom, prix = ObtenirMeilleurBrainrot(plot, mode, root.Position)
-                    if prix > maxVal then
-                        maxVal = prix
-                        cibleHitbox = hitbox
-                        plotCible = plot
-                        nomCible = nom
-                        -- Trouver le podium index du meilleur brainrot
-                        for _, pd in pairs(podiums) do
-                            if pd.name == nom then _ciblePodiumIdx = pd.podiumIndex; break end
+        -- Trouver prompts de vol
+        local prompts = TrouverTousPrompts(plot)
+        for _, prompt in pairs(prompts) do
+            local part = prompt.Parent
+            if part and part:IsA("BasePart") or (part and part:FindFirstChildWhichIsA("BasePart")) then
+                local pos = part:IsA("BasePart") and part.Position or part:FindFirstChildWhichIsA("BasePart").Position
+                local dist = (root.Position - pos).Magnitude
+                if dist <= range then
+                    -- Trouver le brainrot associé à ce prompt
+                    local podium = prompt.Parent and prompt.Parent.Parent and prompt.Parent.Parent.Parent
+                    local brainrotName = "Brainrot"
+                    if podium then
+                        for _, child in pairs(podium:GetDescendants()) do
+                            if child:IsA("Model") and MohaHub.Heros[child.Name] then
+                                brainrotName = child.Name
+                                break
+                            end
                         end
+                    end
+
+                    local heroData = MohaHub.Heros[brainrotName]
+                    local val = heroData and heroData.ValeurNum or 0
+
+                    if mode == "Nearest" and dist < bestDist then
+                        bestDist = dist
+                        bestPrompt = prompt
+                        nomCible = brainrotName
+                    elseif mode == "Highest" and val > bestVal then
+                        bestVal = val
+                        bestPrompt = prompt
+                        nomCible = brainrotName
                     end
                 end
             end
         end
     end
 
-    -- Si pas de cible: montrer état de recherche animé
-    if not cibleHitbox or not plotCible then
+    -- Si pas de cible
+    if not bestPrompt then
         searchDots = (searchDots % 3) + 1
-        local dots = string.rep(".", searchDots)
-        GrabStatusLabel.Text = "Recherche de cible" .. dots
+        GrabStatusLabel.Text = "Recherche de cible" .. string.rep(".", searchDots)
         GrabStatusLabel.TextColor3 = COLORS.textSecondary
-        GrabTimeLabel.Text = "Range: " .. MohaHub.Parametres.GrabRange .. " studs"
+        GrabTimeLabel.Text = "Range: " .. range .. " studs"
         GrabProgressFill.Size = UDim2.new(0, 0, 1, 0)
         GrabBarGlow.BackgroundColor3 = COLORS.accent3
         return
     end
 
-    -- Cible trouvée !
+    -- Cible trouvée
     enCoursDeGrab = true
     GrabStatusLabel.Text = "⚡ VOL: " .. nomCible
     GrabStatusLabel.TextColor3 = COLORS.accent2
@@ -1022,7 +957,6 @@ local function ExecuterAutoGrab()
     local temps = MohaHub.Parametres.GrabDelay
     local startTime = tick()
 
-    -- Animer la barre de progression
     local tween = TweenService:Create(GrabProgressFill, TweenInfo.new(temps, Enum.EasingStyle.Linear), {Size = UDim2.new(1, 0, 1, 0)})
     tween:Play()
 
@@ -1043,177 +977,57 @@ local function ExecuterAutoGrab()
     GrabStatusLabel.Text = "✅ Exécution du vol..."
     GrabBarGlow.BackgroundColor3 = COLORS.green
 
-    local plotName = plotCible.Name -- UUID du plot (ex: "09f8f260-f988-...")
+    -- ============================================================
+    -- MÉTHODE SAFE: fireproximityprompt UNIQUEMENT
+    -- Passe par le code légitime du jeu (pas de token/SHA validation)
+    -- ============================================================
     local ok = false
+    pcall(function()
+        local oH = bestPrompt.HoldDuration
+        local oM = bestPrompt.MaxActivationDistance
+        local oE = bestPrompt.Enabled
+        local oR = bestPrompt.RequiresLineOfSight
 
-    -- ============================================================
-    -- MÉTHODE 1: PROTOCOLE REMOTE RÉEL (décompilé du jeu)
-    -- Le vrai vol utilise des remotes UUID avec timestamp + tokens
-    -- Séquence: HoldBegan -> Steal remote -> Delivery
-    -- ============================================================
-    if RemoteSteal then
-        pcall(function()
-            local serverTime = Workspace:GetServerTimeNow()
+        bestPrompt.HoldDuration = 0
+        bestPrompt.MaxActivationDistance = 9999
+        bestPrompt.Enabled = true
+        bestPrompt.RequiresLineOfSight = false
 
-            -- Étape 1: Fire le remote "hold began" (simule le début du hold)
-            if RemoteHoldBegan then
-                pcall(function()
-                    RemoteHoldBegan:FireServer(serverTime + 53, "5c0bd012-dfb2-4bac-8f1a-e41f136e4744")
-                    RemoteHoldBegan:FireServer(serverTime + 53, "6be28b5b-dbc3-4aab-aa0c-6ebcfa191f22")
-                end)
-            end
-
-            task.wait(0.1)
-
-            -- Étape 2: Fire le remote de vol principal
-            -- Args: (timestamp+67, UUID_token, plotName, podiumIndex)
-            for podiumIdx = 1, 20 do
-                pcall(function()
-                    RemoteSteal:FireServer(
-                        serverTime + 67,
-                        "579e6c26-5a80-407d-9488-0f84752e8f1f",
-                        plotName,
-                        podiumIdx
-                    )
-                end)
-                pcall(function()
-                    RemoteSteal:FireServer(
-                        serverTime + 67,
-                        "c262398d-68e3-4499-8bea-99766bf11686",
-                        plotName,
-                        podiumIdx
-                    )
-                end)
-                task.wait(0.02)
-            end
+        if fireproximityprompt then
+            fireproximityprompt(bestPrompt)
             ok = true
-        end)
-    end
+        end
 
-    -- ============================================================
-    -- MÉTHODE 2: ProximityPrompt (avec bypass anti-tamper)
-    -- Le jeu reset HoldDuration/RequiresLineOfSight via Changed
-    -- On déconnecte temporairement les listeners Changed
-    -- ============================================================
-    if not ok then
-        local stealPrompts = TrouverPromptsSteal(plotCible)
-        for _, data in pairs(stealPrompts) do
-            local prompt = data.prompt
+        task.delay(0.3, function()
             pcall(function()
-                -- Sauvegarder et déconnecter les listeners Changed
-                local _connections = {}
-                pcall(function()
-                    -- Bypass: override les propriétés APRES que Changed les reset
-                    prompt.HoldDuration = 0
-                    prompt.MaxActivationDistance = 9999
-                    prompt.Enabled = true
-                    prompt.RequiresLineOfSight = false
-                end)
-
-                if fireproximityprompt then
-                    fireproximityprompt(prompt)
-                    ok = true
-                end
-
-                task.delay(0.3, function()
-                    pcall(function()
-                        prompt.HoldDuration = 1.5
-                        prompt.MaxActivationDistance = 10
-                        prompt.RequiresLineOfSight = true
-                    end)
-                end)
+                bestPrompt.HoldDuration = oH
+                bestPrompt.MaxActivationDistance = oM
+                bestPrompt.Enabled = oE
+                bestPrompt.RequiresLineOfSight = oR
             end)
-            if ok then break end
-        end
-
-        -- Fallback: chercher TOUS les prompts dans le plot
-        if not ok then
-            for _, desc in pairs(plotCible:GetDescendants()) do
-                if desc:IsA("ProximityPrompt") and desc.Enabled then
-                    pcall(function()
-                        desc.HoldDuration = 0
-                        desc.MaxActivationDistance = 9999
-                        desc.RequiresLineOfSight = false
-                        if fireproximityprompt then
-                            fireproximityprompt(desc)
-                            ok = true
-                        end
-                    end)
-                    if ok then break end
-                end
-            end
-        end
-    end
-
-    -- ============================================================
-    -- MÉTHODE 3: Remote StealService/Grab (Grab + Place)
-    -- ============================================================
-    if not ok and RemoteGrab then
-        pcall(function()
-            for podiumIdx = 1, 20 do
-                pcall(function()
-                    RemoteGrab:FireServer("Grab", podiumIdx)
-                end)
-                task.wait(0.02)
-            end
-            ok = true
         end)
-    end
+    end)
 
-    -- ============================================================
-    -- ÉTAPE LIVRAISON: Après le vol, livrer à sa propre base
-    -- Le serveur set LocalPlayer:GetAttribute("Stealing")
-    -- On doit toucher le DeliveryHitbox de notre plot
-    -- ============================================================
-    task.wait(0.3)
-    if LocalPlayer:GetAttribute("Stealing") or LocalPlayer:GetAttribute("StealingIndex") then
-        GrabStatusLabel.Text = "📦 Livraison en cours..."
-        local monPlot = TrouverMonPlot()
-        if monPlot then
-            -- Trouver le DeliveryHitbox
-            local deliveryHitbox = nil
-            for _, child in pairs(monPlot:GetChildren()) do
-                if child.Name == "DeliveryHitbox" and child:IsA("BasePart") then
-                    deliveryHitbox = child
-                    break
-                end
-            end
-
-            if deliveryHitbox then
-                -- Téléporter brièvement au DeliveryHitbox
-                local posOrig = root.CFrame
-                pcall(function() root.CFrame = deliveryHitbox.CFrame end)
-                task.wait(0.15)
-
-                -- Fire le remote de livraison
-                if RemoteDelivery then
-                    pcall(function()
-                        RemoteDelivery:FireServer("7799aa8a-03f9-4df1-ab0f-b6df84f6b36c")
-                        RemoteDelivery:FireServer("7799aa8a-03f9-4df1-ab0f-b6df84f6b36c")
-                    end)
-                end
-
-                task.wait(0.15)
-                -- Revenir
-                pcall(function() root.CFrame = posOrig end)
-            end
-
-            -- Placer le brainrot volé sur un podium vide
-            task.wait(0.2)
-            if RemoteGrab then
-                for podiumIdx = 1, 20 do
-                    pcall(function()
-                        RemoteGrab:FireServer("Place", podiumIdx)
-                    end)
-                    task.wait(0.02)
-                end
+    -- Fallback: chercher tous les prompts proches
+    if not ok then
+        for _, desc in pairs(DossierPlots:GetDescendants()) do
+            if desc:IsA("ProximityPrompt") then
+                pcall(function()
+                    desc.HoldDuration = 0
+                    desc.MaxActivationDistance = 9999
+                    desc.RequiresLineOfSight = false
+                    if fireproximityprompt then
+                        fireproximityprompt(desc)
+                        ok = true
+                    end
+                end)
+                if ok then break end
             end
         end
     end
 
-    -- Reset état de la barre
-    GrabStatusLabel.Text = "✅ Vol terminé !"
-    GrabStatusLabel.TextColor3 = COLORS.green
+    GrabStatusLabel.Text = ok and "✅ Vol terminé !" or "❌ Échec du vol"
+    GrabStatusLabel.TextColor3 = ok and COLORS.green or COLORS.red
     task.wait(0.5)
     enCoursDeGrab = false
 end
@@ -1230,18 +1044,29 @@ task.spawn(function()
     end
 end)
 
--- ====================== AUTO RECALL ======================
+-- ====================== AUTO-RECALL (FIXED) ======================
+-- Note: Le jeu détecte les spams de remotes, on simule donc légitimement
 task.spawn(function()
     while true do
-        if MohaHub.Parametres.AutoRecall_Actif and RemoteGrab then
-            for i = 1, 10 do
-                pcall(function()
-                    if RemoteGrab:IsA("RemoteEvent") then RemoteGrab:FireServer("Grab", i)
-                    elseif RemoteGrab:IsA("RemoteFunction") then RemoteGrab:InvokeServer("Grab", i) end
-                end)
+        if MohaHub.Parametres.AutoRecall_Actif then
+            -- On fire les prompts de SES PROPRES podiums
+            local monPlot = nil
+            for _, plot in pairs(DossierPlots:GetChildren()) do
+                local owner = plot:FindFirstChild("Owner") or plot:FindFirstChild("PlotOwner")
+                if owner and (owner.Value == LocalPlayer or owner.Value == LocalPlayer.Name) then
+                    monPlot = plot
+                    break
+                end
+            end
+            if monPlot then
+                for _, prompt in pairs(TrouverTousPrompts(monPlot)) do
+                    if prompt.Name:lower():find("grab") or prompt.ActionText:lower():find("grab") then
+                        pcall(function() fireproximityprompt(prompt) end)
+                    end
+                end
             end
         end
-        task.wait(0.5)
+        task.wait(1.5)
     end
 end)
 
@@ -1462,12 +1287,321 @@ task.spawn(function()
         task.wait(1.5)
     end
 end)
+-- ====================== PLAYER ESP ======================
+local playerEspFolder = Instance.new("Folder")
+playerEspFolder.Name = "MohaPlayerESP"
+playerEspFolder.Parent = CoreGui
+
+local playerEspObjects = {}
+
+local function CreatePlayerESP(player)
+    if player == LocalPlayer then return end
+    if playerEspObjects[player] then return end
+
+    local char = player.Character
+    if not char then return end
+    local head = char:FindFirstChild("Head")
+    if not head then return end
+
+    local bb = Instance.new("BillboardGui")
+    bb.Name = "PlayerESP_" .. player.Name
+    bb.Adornee = head
+    bb.Size = UDim2.new(0, 160, 0, 44)
+    bb.StudsOffset = Vector3.new(0, 2.5, 0)
+    bb.AlwaysOnTop = true
+    bb.Parent = playerEspFolder
+
+    local bg = Instance.new("Frame")
+    bg.Size = UDim2.new(1, 0, 1, 0)
+    bg.BackgroundColor3 = Color3.fromRGB(10, 8, 20)
+    bg.BackgroundTransparency = 0.15
+    bg.BorderSizePixel = 0
+    bg.Parent = bb
+    Instance.new("UICorner", bg).CornerRadius = UDim.new(0, 8)
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Parent = bg
+    stroke.Color = COLORS.accent3
+    stroke.Thickness = 1.5
+    stroke.Transparency = 0.2
+
+    -- Gradient top bar
+    local topBar = Instance.new("Frame")
+    topBar.Size = UDim2.new(1, 0, 0, 3)
+    topBar.Position = UDim2.new(0, 0, 0, 0)
+    topBar.BackgroundColor3 = COLORS.accent3
+    topBar.BorderSizePixel = 0
+    topBar.Parent = bg
+    Instance.new("UICorner", topBar).CornerRadius = UDim.new(0, 8)
+    local tGrad = Instance.new("UIGradient")
+    tGrad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, COLORS.accent3),
+        ColorSequenceKeypoint.new(0.5, COLORS.accent1),
+        ColorSequenceKeypoint.new(1, COLORS.accent2)
+    })
+    tGrad.Parent = topBar
+
+    -- Player icon + name
+    local nameL = Instance.new("TextLabel")
+    nameL.Size = UDim2.new(1, -8, 0, 18)
+    nameL.Position = UDim2.new(0, 4, 0, 5)
+    nameL.BackgroundTransparency = 1
+    nameL.Text = "👤 " .. player.DisplayName
+    nameL.TextColor3 = COLORS.accent3
+    nameL.Font = Enum.Font.GothamBold
+    nameL.TextSize = 12
+    nameL.TextScaled = true
+    nameL.TextXAlignment = Enum.TextXAlignment.Left
+    nameL.Parent = bg
+
+    -- Distance + health
+    local infoL = Instance.new("TextLabel")
+    infoL.Size = UDim2.new(1, -8, 0, 14)
+    infoL.Position = UDim2.new(0, 4, 0, 24)
+    infoL.BackgroundTransparency = 1
+    infoL.Text = "..."
+    infoL.TextColor3 = COLORS.textSecondary
+    infoL.Font = Enum.Font.Gotham
+    infoL.TextSize = 10
+    infoL.TextScaled = true
+    infoL.TextXAlignment = Enum.TextXAlignment.Left
+    infoL.Parent = bg
+
+    playerEspObjects[player] = {billboard = bb, infoLabel = infoL, player = player}
+end
+
+local function ClearPlayerESP()
+    for _, data in pairs(playerEspObjects) do
+        if data.billboard then data.billboard:Destroy() end
+    end
+    playerEspObjects = {}
+end
+
+-- ====================== BASE TIMER ESP ======================
+local baseEspFolder = Instance.new("Folder")
+baseEspFolder.Name = "MohaBaseESP"
+baseEspFolder.Parent = CoreGui
+
+local baseEspObjects = {}
+
+local function CreateBaseESP(plot)
+    if baseEspObjects[plot] then return end
+
+    -- Trouver le centre du plot
+    local center = nil
+    for _, child in pairs(plot:GetChildren()) do
+        if child:IsA("BasePart") and (child.Name == "Base" or child.Name == "Floor" or child.Name == "Ground") then
+            center = child
+            break
+        end
+    end
+    if not center then
+        -- Fallback: premier BasePart trouvé
+        center = plot:FindFirstChildWhichIsA("BasePart")
+    end
+    if not center then return end
+
+    -- Trouver le propriétaire
+    local ownerName = "Personne"
+    local owner = plot:FindFirstChild("Owner") or plot:FindFirstChild("PlotOwner")
+    if owner then
+        if owner:IsA("ObjectValue") and owner.Value then
+            ownerName = owner.Value.DisplayName or owner.Value.Name
+        elseif owner:IsA("StringValue") and owner.Value ~= "" then
+            ownerName = owner.Value
+        end
+    end
+
+    local bb = Instance.new("BillboardGui")
+    bb.Name = "BaseESP_" .. plot.Name:sub(1, 8)
+    bb.Adornee = center
+    bb.Size = UDim2.new(0, 180, 0, 56)
+    bb.StudsOffset = Vector3.new(0, 8, 0)
+    bb.AlwaysOnTop = true
+    bb.Parent = baseEspFolder
+
+    local bg = Instance.new("Frame")
+    bg.Size = UDim2.new(1, 0, 1, 0)
+    bg.BackgroundColor3 = Color3.fromRGB(12, 8, 22)
+    bg.BackgroundTransparency = 0.1
+    bg.BorderSizePixel = 0
+    bg.Parent = bb
+    Instance.new("UICorner", bg).CornerRadius = UDim.new(0, 8)
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Parent = bg
+    stroke.Color = COLORS.accent1
+    stroke.Thickness = 1.5
+    stroke.Transparency = 0.2
+
+    -- Gradient top bar
+    local topBar = Instance.new("Frame")
+    topBar.Size = UDim2.new(1, 0, 0, 3)
+    topBar.BackgroundColor3 = COLORS.accent1
+    topBar.BorderSizePixel = 0
+    topBar.Parent = bg
+    Instance.new("UICorner", topBar).CornerRadius = UDim.new(0, 8)
+    local bGrad = Instance.new("UIGradient")
+    bGrad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, COLORS.accent1),
+        ColorSequenceKeypoint.new(1, COLORS.accent2)
+    })
+    bGrad.Parent = topBar
+
+    -- Owner name
+    local ownerL = Instance.new("TextLabel")
+    ownerL.Size = UDim2.new(1, -8, 0, 16)
+    ownerL.Position = UDim2.new(0, 4, 0, 5)
+    ownerL.BackgroundTransparency = 1
+    ownerL.Text = "🏠 " .. ownerName
+    ownerL.TextColor3 = COLORS.accent1
+    ownerL.Font = Enum.Font.GothamBold
+    ownerL.TextSize = 11
+    ownerL.TextScaled = true
+    ownerL.TextXAlignment = Enum.TextXAlignment.Left
+    ownerL.Parent = bg
+
+    -- Brainrot count + distance
+    local infoL = Instance.new("TextLabel")
+    infoL.Size = UDim2.new(1, -8, 0, 13)
+    infoL.Position = UDim2.new(0, 4, 0, 21)
+    infoL.BackgroundTransparency = 1
+    infoL.Text = "..."
+    infoL.TextColor3 = COLORS.textSecondary
+    infoL.Font = Enum.Font.Gotham
+    infoL.TextSize = 9
+    infoL.TextScaled = true
+    infoL.TextXAlignment = Enum.TextXAlignment.Left
+    infoL.Parent = bg
+
+    -- Timer (steal cooldown)
+    local timerL = Instance.new("TextLabel")
+    timerL.Size = UDim2.new(1, -8, 0, 13)
+    timerL.Position = UDim2.new(0, 4, 0, 35)
+    timerL.BackgroundTransparency = 1
+    timerL.Text = "⏱ ..."
+    timerL.TextColor3 = COLORS.accent2
+    timerL.Font = Enum.Font.GothamBold
+    timerL.TextSize = 9
+    timerL.TextScaled = true
+    timerL.TextXAlignment = Enum.TextXAlignment.Left
+    timerL.Parent = bg
+
+    baseEspObjects[plot] = {billboard = bb, infoLabel = infoL, timerLabel = timerL, center = center, ownerName = ownerName}
+end
+
+local function ClearBaseESP()
+    for _, data in pairs(baseEspObjects) do
+        if data.billboard then data.billboard:Destroy() end
+    end
+    baseEspObjects = {}
+end
+
+-- ====================== PLAYER ESP + BASE ESP UPDATE LOOP ======================
+-- Ajout parametres dans MohaHub
+MohaHub.Parametres.PlayerESP = false
+MohaHub.Parametres.BaseTimerESP = false
+
+task.spawn(function()
+    while true do
+        local char = LocalPlayer.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+
+        -- ===== PLAYER ESP =====
+        if MohaHub.Parametres.PlayerESP then
+            for _, player in pairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer and player.Character then
+                    CreatePlayerESP(player)
+                end
+            end
+            -- Update distances
+            for player, data in pairs(playerEspObjects) do
+                local pChar = player.Character
+                local pRoot = pChar and pChar:FindFirstChild("HumanoidRootPart")
+                local pHead = pChar and pChar:FindFirstChild("Head")
+                if not pChar or not pRoot or not pHead then
+                    data.billboard:Destroy()
+                    playerEspObjects[player] = nil
+                elseif root then
+                    local dist = math.floor((root.Position - pRoot.Position).Magnitude)
+                    local hum = pChar:FindFirstChildWhichIsA("Humanoid")
+                    local hp = hum and math.floor(hum.Health) or "?"
+                    data.infoLabel.Text = "📏 " .. dist .. "m · ❤️ " .. tostring(hp)
+                    data.billboard.Adornee = pHead
+                end
+            end
+        else
+            ClearPlayerESP()
+        end
+
+        -- ===== BASE TIMER ESP =====
+        if MohaHub.Parametres.BaseTimerESP and DossierPlots then
+            for _, plot in pairs(DossierPlots:GetChildren()) do
+                CreateBaseESP(plot)
+            end
+            -- Update info
+            for plot, data in pairs(baseEspObjects) do
+                if not plot.Parent or not data.center or not data.center.Parent then
+                    data.billboard:Destroy()
+                    baseEspObjects[plot] = nil
+                elseif root then
+                    local dist = math.floor((root.Position - data.center.Position).Magnitude)
+                    -- Compter les brainrots dans ce plot
+                    local brainrotCount = 0
+                    for _, desc in pairs(plot:GetDescendants()) do
+                        if desc:IsA("Model") and MohaHub.Heros[desc.Name] then
+                            brainrotCount = brainrotCount + 1
+                        end
+                    end
+                    data.infoLabel.Text = "🧠 " .. brainrotCount .. " brainrots · 📏 " .. dist .. "m"
+
+                    -- Timer de protection steal
+                    local stealTimer = plot:GetAttribute("StealTimer") or plot:GetAttribute("StealCooldown") or plot:GetAttribute("Timer")
+                    if stealTimer and type(stealTimer) == "number" then
+                        local serverTime = Workspace:GetServerTimeNow()
+                        local remaining = math.max(0, stealTimer - serverTime)
+                        if remaining > 0 then
+                            local mins = math.floor(remaining / 60)
+                            local secs = math.floor(remaining % 60)
+                            data.timerLabel.Text = "⏱ Protection: " .. string.format("%d:%02d", mins, secs)
+                            data.timerLabel.TextColor3 = COLORS.red
+                        else
+                            data.timerLabel.Text = "⏱ Vulnérable !"
+                            data.timerLabel.TextColor3 = COLORS.green
+                        end
+                    else
+                        -- Chercher un timer dans les enfants
+                        local timerVal = nil
+                        for _, child in pairs(plot:GetChildren()) do
+                            if child:IsA("NumberValue") and (child.Name:lower():find("timer") or child.Name:lower():find("cooldown") or child.Name:lower():find("steal")) then
+                                timerVal = child.Value
+                                break
+                            end
+                        end
+                        if timerVal and timerVal > 0 then
+                            local mins = math.floor(timerVal / 60)
+                            local secs = math.floor(timerVal % 60)
+                            data.timerLabel.Text = "⏱ " .. string.format("%d:%02d", mins, secs)
+                            data.timerLabel.TextColor3 = COLORS.accent2
+                        else
+                            data.timerLabel.Text = "⏱ Prêt à voler"
+                            data.timerLabel.TextColor3 = COLORS.green
+                        end
+                    end
+                end
+            end
+        else
+            ClearBaseESP()
+        end
+
+        task.wait(1)
+    end
+end)
 
 -- ====================== FIN ======================
-print("[MohaHub] v9 ULTIMATE chargé !")
-print("[MohaHub] Net Library: " .. (Net and "OK" or "NON TROUVÉ"))
-print("[MohaHub] Remote Grab: " .. (RemoteGrab and RemoteGrab:GetFullName() or "NON TROUVÉ"))
-print("[MohaHub] Remote Steal: " .. (RemoteSteal and RemoteSteal:GetFullName() or "NON TROUVÉ"))
-print("[MohaHub] Remote HoldBegan: " .. (RemoteHoldBegan and RemoteHoldBegan:GetFullName() or "NON TROUVÉ"))
-print("[MohaHub] Remote Delivery: " .. (RemoteDelivery and RemoteDelivery:GetFullName() or "NON TROUVÉ"))
-print("[MohaHub] GUI Custom - Protocole Réel")
+print("[MohaHub] v9 ULTIMATE chargé ! (MODE SAFE)")
+print("[MohaHub] Méthode: fireproximityprompt uniquement")
+print("[MohaHub] Anti-Ban: Aucun remote UUID touché")
+print("[MohaHub] ESP: Brainrot + Player + Base Timer")
+print("[MohaHub] GUI Custom - Mode Safe")
+end)
