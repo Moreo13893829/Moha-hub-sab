@@ -38,39 +38,43 @@ local DossierModeles = ReplicatedStorage:WaitForChild("Models", 5)
 local DossierAnimaux = DossierModeles and DossierModeles:WaitForChild("Animals", 5)
 local DossierPlots = Workspace:WaitForChild("Plots", 5)
 
--- FIX: Le jeu utilise Net:RemoteEvent("StealService/Grab")
--- La librairie Net crée les remotes avec des conventions spécifiques
+-- ====================== VRAIS REMOTES DU JEU (décompilés) ======================
+-- Le jeu utilise la librairie Net qui crée les remotes dans ReplicatedStorage
+-- Les noms clés sont: StealService/Grab, et les UUID remotes pour le vol
+local Net = nil
+pcall(function() Net = require(ReplicatedStorage.Packages.Net) end)
+
+-- Remote pour Grab/Place (propriétaire)
 local RemoteGrab = nil
+-- Remote pour le VOL (UUID obfusqué)
+local RemoteSteal = nil     -- "5aa39ea1-0c65-4fcf-aff9-b18a7ef277c3"
+-- Remote pour le hold began (pré-vol)
+local RemoteHoldBegan = nil -- "b096e1ca-9c3a-453b-8b60-268b235083b9"
+-- Remote pour la livraison
+local RemoteDelivery = nil  -- "5c8f0dd0-0f9e-44ba-8f9b-197958b661ab"
+
 do
-    -- Méthode 1: Chercher le dossier StealService > Grab (structure dossier Net)
-    local stealFolder = ReplicatedStorage:FindFirstChild("StealService", true)
-    if stealFolder and stealFolder:IsA("Folder") then
-        RemoteGrab = stealFolder:FindFirstChild("Grab")
+    -- Méthode 1: Via la librairie Net du jeu (le plus fiable)
+    if Net then
+        pcall(function() RemoteGrab = Net:RemoteEvent("StealService/Grab") end)
+        pcall(function() RemoteSteal = Net:RemoteEvent("5aa39ea1-0c65-4fcf-aff9-b18a7ef277c3") end)
+        pcall(function() RemoteHoldBegan = Net:RemoteEvent("b096e1ca-9c3a-453b-8b60-268b235083b9") end)
+        pcall(function() RemoteDelivery = Net:RemoteEvent("5c8f0dd0-0f9e-44ba-8f9b-197958b661ab") end)
     end
-    -- Méthode 2: Le Net library met parfois les remotes dans un dossier "Net" ou "Remotes"
-    if not RemoteGrab then
-        for _, folder in pairs(ReplicatedStorage:GetDescendants()) do
-            if folder:IsA("Folder") and (folder.Name == "Net" or folder.Name == "Remotes" or folder.Name == "Events") then
-                local grab = folder:FindFirstChild("StealService/Grab") or folder:FindFirstChild("Grab")
-                if grab then RemoteGrab = grab; break end
-            end
-        end
-    end
-    -- Méthode 3: Chercher un remote nommé exactement "StealService/Grab" (Net library naming)
-    if not RemoteGrab then
-        for _, d in pairs(ReplicatedStorage:GetDescendants()) do
-            if d:IsA("RemoteEvent") and d.Name == "StealService/Grab" then
-                RemoteGrab = d; break
-            end
-        end
-    end
-    -- Méthode 4: Chercher récursivement "Grab" comme RemoteEvent
-    if not RemoteGrab then
+
+    -- Méthode 2: Chercher directement par nom dans ReplicatedStorage
+    if not RemoteGrab or not RemoteSteal then
         for _, d in pairs(ReplicatedStorage:GetDescendants()) do
             if d:IsA("RemoteEvent") then
-                local n = d.Name:lower()
-                if n == "grab" or n:find("steal.*grab") or n:find("grab") then
-                    RemoteGrab = d; break
+                local n = d.Name
+                if n == "StealService/Grab" or n == "Grab" then
+                    if not RemoteGrab then RemoteGrab = d end
+                elseif n == "5aa39ea1-0c65-4fcf-aff9-b18a7ef277c3" then
+                    RemoteSteal = d
+                elseif n == "b096e1ca-9c3a-453b-8b60-268b235083b9" then
+                    RemoteHoldBegan = d
+                elseif n == "5c8f0dd0-0f9e-44ba-8f9b-197958b661ab" then
+                    RemoteDelivery = d
                 end
             end
         end
@@ -871,6 +875,70 @@ end
 local enCoursDeGrab = false
 local searchDots = 0
 
+-- Trouver le plot du joueur local (pour la livraison)
+local function TrouverMonPlot()
+    if not DossierPlots then return nil end
+    for _, plot in pairs(DossierPlots:GetChildren()) do
+        local owner = plot:FindFirstChild("Owner") or plot:FindFirstChild("PlotOwner")
+        if owner then
+            if owner:IsA("ObjectValue") and owner.Value == LocalPlayer then return plot end
+            if owner:IsA("StringValue") and owner.Value == LocalPlayer.Name then return plot end
+        end
+    end
+    return nil
+end
+
+-- Trouver les ProximityPrompts de steal sur un podium (chemin exact du jeu)
+-- Chemin: plot.AnimalPodiums.[N].Base.Spawn.PromptAttachment
+local function TrouverPromptsSteal(plot)
+    local prompts = {}
+    local podiums = plot:FindFirstChild("AnimalPodiums")
+    if podiums then
+        for _, podium in pairs(podiums:GetChildren()) do
+            local base = podium:FindFirstChild("Base")
+            if base then
+                local spawn = base:FindFirstChild("Spawn")
+                if spawn then
+                    local attach = spawn:FindFirstChild("PromptAttachment")
+                    if attach then
+                        for _, p in pairs(attach:GetChildren()) do
+                            if p:IsA("ProximityPrompt") then
+                                -- Vérifier que le prompt est en mode "Steal"
+                                local state = p:GetAttribute("State")
+                                if state == "Steal" then
+                                    table.insert(prompts, {prompt = p, podiumIndex = tonumber(podium.Name) or 0})
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return prompts
+end
+
+-- Trouver les podiums qui ont un brainrot volé pas encore placé
+local function TrouverPodiumsAvecBrainrot(plot)
+    local found = {}
+    local podiums = plot:FindFirstChild("AnimalPodiums")
+    if podiums then
+        for _, podium in pairs(podiums:GetChildren()) do
+            local idx = tonumber(podium.Name)
+            if idx then
+                -- Vérifier si ce podium a un animal visible
+                for _, child in pairs(podium:GetDescendants()) do
+                    if child:IsA("Model") and MohaHub.Heros[child.Name] then
+                        table.insert(found, {podiumIndex = idx, name = child.Name})
+                        break
+                    end
+                end
+            end
+        end
+    end
+    return found
+end
+
 local function ExecuterAutoGrab()
     if enCoursDeGrab then return end
     local char = LocalPlayer.Character
@@ -883,6 +951,7 @@ local function ExecuterAutoGrab()
     local mode = MohaHub.Parametres.GrabMode
     local range = MohaHub.Parametres.GrabRange
     local cibleHitbox, nomCible, plotCible = nil, "Cible", nil
+    local _ciblePodiumIdx = 1
     local minDist, maxVal = range, -1
 
     for _, plot in pairs(DossierPlots:GetChildren()) do
@@ -892,6 +961,7 @@ local function ExecuterAutoGrab()
             if owner:IsA("StringValue") and owner.Value == LocalPlayer.Name then continue end
         end
 
+        -- Chercher tous les StealHitbox
         local hitboxes = {}
         for _, desc in pairs(plot:GetDescendants()) do
             if desc.Name == "StealHitbox" and desc:IsA("BasePart") then
@@ -899,16 +969,19 @@ local function ExecuterAutoGrab()
             end
         end
 
+        -- Chercher les podiums avec brainrots
+        local podiums = TrouverPodiumsAvecBrainrot(plot)
+
         for _, hitbox in pairs(hitboxes) do
             local dist = (root.Position - hitbox.Position).Magnitude
-            if dist <= range then
+            if dist <= range and #podiums > 0 then
                 if mode == "Nearest" then
                     if dist < minDist then
                         minDist = dist
                         cibleHitbox = hitbox
                         plotCible = plot
-                        local _, name = ObtenirMeilleurBrainrot(plot, mode, root.Position)
-                        nomCible = name
+                        nomCible = podiums[1].name
+                        _ciblePodiumIdx = podiums[1].podiumIndex
                     end
                 elseif mode == "Highest" then
                     local _, nom, prix = ObtenirMeilleurBrainrot(plot, mode, root.Position)
@@ -917,6 +990,10 @@ local function ExecuterAutoGrab()
                         cibleHitbox = hitbox
                         plotCible = plot
                         nomCible = nom
+                        -- Trouver le podium index du meilleur brainrot
+                        for _, pd in pairs(podiums) do
+                            if pd.name == nom then _ciblePodiumIdx = pd.podiumIndex; break end
+                        end
                     end
                 end
             end
@@ -935,7 +1012,7 @@ local function ExecuterAutoGrab()
         return
     end
 
-    -- Cible trouvée ! Lancer le grab
+    -- Cible trouvée !
     enCoursDeGrab = true
     GrabStatusLabel.Text = "⚡ VOL: " .. nomCible
     GrabStatusLabel.TextColor3 = COLORS.accent2
@@ -949,7 +1026,6 @@ local function ExecuterAutoGrab()
     local tween = TweenService:Create(GrabProgressFill, TweenInfo.new(temps, Enum.EasingStyle.Linear), {Size = UDim2.new(1, 0, 1, 0)})
     tween:Play()
 
-    -- Timer en temps réel
     local conn
     conn = RunService.RenderStepped:Connect(function()
         local elapsed = tick() - startTime
@@ -967,55 +1043,111 @@ local function ExecuterAutoGrab()
     GrabStatusLabel.Text = "✅ Exécution du vol..."
     GrabBarGlow.BackgroundColor3 = COLORS.green
 
-    -- ===========================================================
-    -- TELEPORT BREF vers le StealHitbox pour activer _G.playerPlots
-    -- Le serveur a besoin que le joueur soit SUR la hitbox
-    -- ===========================================================
-    local positionOriginale = root.CFrame
-    pcall(function()
-        root.CFrame = cibleHitbox.CFrame
-    end)
-    task.wait(0.15) -- Laisser le serveur détecter notre présence
-
-    -- ===========================================================
-    -- MULTI-MÉTHODE STEAL
-    -- ===========================================================
+    local plotName = plotCible.Name -- UUID du plot (ex: "09f8f260-f988-...")
     local ok = false
 
-    -- MÉTHODE 1: ProximityPrompt
-    if not ok then
-        local prompts = {}
-        for _, desc in pairs(plotCible:GetDescendants()) do
-            if desc:IsA("ProximityPrompt") then
-                table.insert(prompts, desc)
+    -- ============================================================
+    -- MÉTHODE 1: PROTOCOLE REMOTE RÉEL (décompilé du jeu)
+    -- Le vrai vol utilise des remotes UUID avec timestamp + tokens
+    -- Séquence: HoldBegan -> Steal remote -> Delivery
+    -- ============================================================
+    if RemoteSteal then
+        pcall(function()
+            local serverTime = Workspace:GetServerTimeNow()
+
+            -- Étape 1: Fire le remote "hold began" (simule le début du hold)
+            if RemoteHoldBegan then
+                pcall(function()
+                    RemoteHoldBegan:FireServer(serverTime + 53, "5c0bd012-dfb2-4bac-8f1a-e41f136e4744")
+                    RemoteHoldBegan:FireServer(serverTime + 53, "6be28b5b-dbc3-4aab-aa0c-6ebcfa191f22")
+                end)
             end
-        end
-        for _, prompt in pairs(prompts) do
+
+            task.wait(0.1)
+
+            -- Étape 2: Fire le remote de vol principal
+            -- Args: (timestamp+67, UUID_token, plotName, podiumIndex)
+            for podiumIdx = 1, 20 do
+                pcall(function()
+                    RemoteSteal:FireServer(
+                        serverTime + 67,
+                        "579e6c26-5a80-407d-9488-0f84752e8f1f",
+                        plotName,
+                        podiumIdx
+                    )
+                end)
+                pcall(function()
+                    RemoteSteal:FireServer(
+                        serverTime + 67,
+                        "c262398d-68e3-4499-8bea-99766bf11686",
+                        plotName,
+                        podiumIdx
+                    )
+                end)
+                task.wait(0.02)
+            end
+            ok = true
+        end)
+    end
+
+    -- ============================================================
+    -- MÉTHODE 2: ProximityPrompt (avec bypass anti-tamper)
+    -- Le jeu reset HoldDuration/RequiresLineOfSight via Changed
+    -- On déconnecte temporairement les listeners Changed
+    -- ============================================================
+    if not ok then
+        local stealPrompts = TrouverPromptsSteal(plotCible)
+        for _, data in pairs(stealPrompts) do
+            local prompt = data.prompt
             pcall(function()
-                local oH, oM, oE, oR = prompt.HoldDuration, prompt.MaxActivationDistance, prompt.Enabled, prompt.RequiresLineOfSight
-                prompt.HoldDuration = 0
-                prompt.MaxActivationDistance = 9999
-                prompt.Enabled = true
-                prompt.RequiresLineOfSight = false
+                -- Sauvegarder et déconnecter les listeners Changed
+                local _connections = {}
+                pcall(function()
+                    -- Bypass: override les propriétés APRES que Changed les reset
+                    prompt.HoldDuration = 0
+                    prompt.MaxActivationDistance = 9999
+                    prompt.Enabled = true
+                    prompt.RequiresLineOfSight = false
+                end)
+
                 if fireproximityprompt then
                     fireproximityprompt(prompt)
                     ok = true
                 end
-                task.delay(0.2, function()
+
+                task.delay(0.3, function()
                     pcall(function()
-                        prompt.HoldDuration = oH
-                        prompt.MaxActivationDistance = oM
-                        prompt.Enabled = oE
-                        prompt.RequiresLineOfSight = oR
+                        prompt.HoldDuration = 1.5
+                        prompt.MaxActivationDistance = 10
+                        prompt.RequiresLineOfSight = true
                     end)
                 end)
             end)
             if ok then break end
         end
+
+        -- Fallback: chercher TOUS les prompts dans le plot
+        if not ok then
+            for _, desc in pairs(plotCible:GetDescendants()) do
+                if desc:IsA("ProximityPrompt") and desc.Enabled then
+                    pcall(function()
+                        desc.HoldDuration = 0
+                        desc.MaxActivationDistance = 9999
+                        desc.RequiresLineOfSight = false
+                        if fireproximityprompt then
+                            fireproximityprompt(desc)
+                            ok = true
+                        end
+                    end)
+                    if ok then break end
+                end
+            end
+        end
     end
 
-    -- MÉTHODE 2: Remote "Grab" avec podiumIndex
-    -- On est maintenant SUR la hitbox, donc _G.playerPlots est set
+    -- ============================================================
+    -- MÉTHODE 3: Remote StealService/Grab (Grab + Place)
+    -- ============================================================
     if not ok and RemoteGrab then
         pcall(function()
             for podiumIdx = 1, 20 do
@@ -1028,29 +1160,56 @@ local function ExecuterAutoGrab()
         end)
     end
 
-    -- MÉTHODE 3: ClickDetector
-    if not ok then
-        local cd = plotCible:FindFirstChildWhichIsA("ClickDetector", true)
-        if cd and fireclickdetector then
-            pcall(function() fireclickdetector(cd); ok = true end)
-        end
-    end
+    -- ============================================================
+    -- ÉTAPE LIVRAISON: Après le vol, livrer à sa propre base
+    -- Le serveur set LocalPlayer:GetAttribute("Stealing")
+    -- On doit toucher le DeliveryHitbox de notre plot
+    -- ============================================================
+    task.wait(0.3)
+    if LocalPlayer:GetAttribute("Stealing") or LocalPlayer:GetAttribute("StealingIndex") then
+        GrabStatusLabel.Text = "📦 Livraison en cours..."
+        local monPlot = TrouverMonPlot()
+        if monPlot then
+            -- Trouver le DeliveryHitbox
+            local deliveryHitbox = nil
+            for _, child in pairs(monPlot:GetChildren()) do
+                if child.Name == "DeliveryHitbox" and child:IsA("BasePart") then
+                    deliveryHitbox = child
+                    break
+                end
+            end
 
-    -- MÉTHODE 4: Remotes dans le plot
-    if not ok then
-        for _, d in pairs(plotCible:GetDescendants()) do
-            if d:IsA("RemoteEvent") then
-                pcall(function() d:FireServer(); ok = true end)
-                if ok then break end
+            if deliveryHitbox then
+                -- Téléporter brièvement au DeliveryHitbox
+                local posOrig = root.CFrame
+                pcall(function() root.CFrame = deliveryHitbox.CFrame end)
+                task.wait(0.15)
+
+                -- Fire le remote de livraison
+                if RemoteDelivery then
+                    pcall(function()
+                        RemoteDelivery:FireServer("7799aa8a-03f9-4df1-ab0f-b6df84f6b36c")
+                        RemoteDelivery:FireServer("7799aa8a-03f9-4df1-ab0f-b6df84f6b36c")
+                    end)
+                end
+
+                task.wait(0.15)
+                -- Revenir
+                pcall(function() root.CFrame = posOrig end)
+            end
+
+            -- Placer le brainrot volé sur un podium vide
+            task.wait(0.2)
+            if RemoteGrab then
+                for podiumIdx = 1, 20 do
+                    pcall(function()
+                        RemoteGrab:FireServer("Place", podiumIdx)
+                    end)
+                    task.wait(0.02)
+                end
             end
         end
     end
-
-    -- Revenir à la position originale
-    task.wait(0.1)
-    pcall(function()
-        root.CFrame = positionOriginale
-    end)
 
     -- Reset état de la barre
     GrabStatusLabel.Text = "✅ Vol terminé !"
@@ -1306,5 +1465,9 @@ end)
 
 -- ====================== FIN ======================
 print("[MohaHub] v9 ULTIMATE chargé !")
-print("[MohaHub] Remote: "..(RemoteGrab and RemoteGrab:GetFullName() or "NON TROUVÉ"))
-print("[MohaHub] GUI Custom - Zero Dépendances")
+print("[MohaHub] Net Library: " .. (Net and "OK" or "NON TROUVÉ"))
+print("[MohaHub] Remote Grab: " .. (RemoteGrab and RemoteGrab:GetFullName() or "NON TROUVÉ"))
+print("[MohaHub] Remote Steal: " .. (RemoteSteal and RemoteSteal:GetFullName() or "NON TROUVÉ"))
+print("[MohaHub] Remote HoldBegan: " .. (RemoteHoldBegan and RemoteHoldBegan:GetFullName() or "NON TROUVÉ"))
+print("[MohaHub] Remote Delivery: " .. (RemoteDelivery and RemoteDelivery:GetFullName() or "NON TROUVÉ"))
+print("[MohaHub] GUI Custom - Protocole Réel")
