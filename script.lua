@@ -630,11 +630,21 @@ GrabBarGui.Enabled = false
 GrabBarGui.DisplayOrder = 999
 
 local GrabBarFrame = Instance.new("Frame")
-GrabBarFrame.Size = UDim2.new(1, 0, 0, 44)
-GrabBarFrame.Position = UDim2.new(0, 0, 0, 0)
+GrabBarFrame.Size = UDim2.new(0, 300, 0, 42)
+GrabBarFrame.Position = UDim2.new(0.5, -150, 0, 5)
 GrabBarFrame.BackgroundColor3 = Color3.fromRGB(8, 6, 18)
 GrabBarFrame.BorderSizePixel = 0
+GrabBarFrame.Active = false -- Empêche d'être cliqué/déplacé
 GrabBarFrame.Parent = GrabBarGui
+
+local barCorner = Instance.new("UICorner", GrabBarFrame)
+barCorner.CornerRadius = UDim.new(0, 10)
+
+local grabBarStroke = Instance.new("UIStroke")
+grabBarStroke.Parent = GrabBarFrame
+grabBarStroke.Color = COLORS.accent1
+grabBarStroke.Thickness = 1.2
+grabBarStroke.Transparency = 0.6
 
 local grabBarGrad = Instance.new("UIGradient")
 grabBarGrad.Color = ColorSequence.new({
@@ -891,13 +901,22 @@ local function ExecuterAutoGrab()
     local range = MohaHub.Parametres.GrabRange
     local bestPrompt, bestCFrame, nomCible, bestDist, bestVal = nil, nil, "Cible", math.huge, -1
 
+    local plots = DossierPlots:GetChildren()
+    print("[MohaHub] Analyse de " .. #plots .. " plots...")
+
     for _, plot in pairs(DossierPlots:GetChildren()) do
         -- Skip notre propre plot
         local owner = plot:FindFirstChild("Owner") or plot:FindFirstChild("PlotOwner")
+        local isMine = false
         if owner then
-            if owner:IsA("ObjectValue") and owner.Value == LocalPlayer then continue end
-            if owner:IsA("StringValue") and owner.Value == LocalPlayer.Name then continue end
+            if owner:IsA("ObjectValue") and (owner.Value == LocalPlayer or (owner.Value and owner.Value.Name == LocalPlayer.Name)) then isMine = true end
+            if owner:IsA("StringValue") and (owner.Value == LocalPlayer.Name or owner.Value == tostring(LocalPlayer.UserId)) then isMine = true end
         end
+        if isMine then continue end
+
+        -- Vérifier si le plot est protégé/fermé
+        local isProtected = plot:GetAttribute("ShieldActive") or plot:GetAttribute("Locked") or plot:FindFirstChild("Shield") or plot:FindFirstChild("ForceField")
+        if isProtected then continue end
 
         -- Trouver prompts de vol
         local prompts = TrouverTousPrompts(plot)
@@ -1615,9 +1634,14 @@ task.spawn(function()
                     end
                     data.infoLabel.Text = "🧠 " .. brainrotCount .. " brainrots · 📏 " .. dist .. "m"
 
-                    -- Timer de protection steal
+                    -- Timer de protection steal + Détection Shield/Locked
+                    local isP = plot:GetAttribute("ShieldActive") or plot:GetAttribute("Locked") or plot:FindFirstChild("Shield") or plot:FindFirstChild("ForceField")
                     local stealTimer = plot:GetAttribute("StealTimer") or plot:GetAttribute("StealCooldown") or plot:GetAttribute("Timer")
-                    if stealTimer and type(stealTimer) == "number" then
+                    
+                    if isP then
+                        data.timerLabel.Text = "🛡️ Fermé / Protégé"
+                        data.timerLabel.TextColor3 = COLORS.accent1
+                    elseif stealTimer and type(stealTimer) == "number" then
                         local serverTime = Workspace:GetServerTimeNow()
                         local remaining = math.max(0, stealTimer - serverTime)
                         if remaining > 0 then
