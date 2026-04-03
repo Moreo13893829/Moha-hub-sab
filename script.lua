@@ -53,6 +53,43 @@ local MohaHub = {
     }
 }
 
+function MohaHub:ExtraireProprio(plot)
+    if not plot then return nil end
+    local o = plot:FindFirstChild("Owner") or plot:FindFirstChild("PlotOwner") or plot:GetAttribute("Owner") or plot:GetAttribute("OwnerName")
+    if type(o) == "string" and o ~= "" and o ~= "Personne" then return o end
+    if typeof(o) == "Instance" then
+        if o:IsA("ObjectValue") and o.Value then 
+            local val = o.Value
+            return (val:IsA("Player") and val.DisplayName) or val.Name 
+        end
+        if o:IsA("StringValue") and o.Value ~= "" and o.Value ~= "Personne" then return o.Value end
+    end
+    -- Fallback: Chercher un StringValue ou ObjectValue enfant avec "Owner" dans le nom
+    for _, v in pairs(plot:GetChildren()) do
+        if v.Name:lower():find("owner") then
+            if v:IsA("StringValue") and v.Value ~= "" then return v.Value end
+            if v:IsA("ObjectValue") and v.Value then 
+                local val = v.Value
+                return (val:IsA("Player") and val.DisplayName) or val.Name
+            end
+        end
+    end
+    return nil
+end
+
+function MohaHub:EstVide(plot)
+    if not plot then return true end
+    -- Si on trouve un proprio, c'est pas vide
+    if self:ExtraireProprio(plot) then return false end
+    -- Si on trouve au moins un brainrot, c'est pas vide
+    for _, desc in pairs(plot:GetDescendants()) do
+        if desc:IsA("Model") and self.Heros[desc.Name] then return false end
+    end
+    -- Si on trouve un bouton de "Réclamation", c'est vide
+    if plot:FindFirstChild("Claim") or plot:FindFirstChild("ClaimPlot") then return true end
+    return true
+end
+
 function MohaHub:EstProtege(plot)
     if not plot then return false end
     -- Check common Attributes
@@ -909,9 +946,8 @@ local function TrouverTousPrompts(plot)
 end
 
 local function VerifierProtectionPlot(plot)
-    local owner = plot:FindFirstChild("Owner") or plot:FindFirstChild("PlotOwner")
-    if not owner or (owner:IsA("ObjectValue") and not owner.Value) or (owner:IsA("StringValue") and owner.Value == "") then
-        return true -- Considéré comme vide/non-revendiqué
+    if MohaHub:EstVide(plot) then
+        return true -- Considéré comme vide
     end
     return MohaHub:EstProtege(plot)
 end
@@ -1506,26 +1542,19 @@ local function CreateBaseESP(plot)
     end
     if not center then return end
 
-    -- Trouver le propriétaire
-    local owner = plot:FindFirstChild("Owner") or plot:FindFirstChild("PlotOwner")
-    local ownerName = nil
+    -- Trouver le propriétaire (Système robuste)
+    local ownerName = MohaHub:ExtraireProprio(plot)
     
-    if owner then
-        if owner:IsA("ObjectValue") and owner.Value then
-            ownerName = owner.Value.DisplayName or owner.Value.Name
-        elseif owner:IsA("StringValue") and owner.Value ~= "" and owner.Value ~= "Personne" then
-            ownerName = owner.Value
-        end
-    end
-
-    -- Si pas de proprio, on ne crée pas d'ESP
-    if not ownerName or ownerName == "" or ownerName == "Personne" then 
+    -- Si vraiment vide (pas de proprio et pas de brainrots), on skip
+    if not ownerName and MohaHub:EstVide(plot) then 
         if baseEspObjects[plot] then
             baseEspObjects[plot].billboard:Destroy()
             baseEspObjects[plot] = nil
         end
         return 
     end
+    
+    ownerName = ownerName or "Base Inconnue"
 
     local bb = Instance.new("BillboardGui")
     bb.Name = "BaseESP_" .. plot.Name:sub(1, 8)
