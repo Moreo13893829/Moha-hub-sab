@@ -653,112 +653,200 @@ CreateDropdown(p1, "🎯 Priorité", {"Highest", "Nearest"}, "Highest", function
 
 CreateSection(p1, "OUTILS")
 
--- Bouton TP vers le meilleur brainrot
-local tpBestBtn = Instance.new("TextButton")
-tpBestBtn.Size = UDim2.new(1, 0, 0, 42)
-tpBestBtn.BackgroundColor3 = COLORS.accent2
-tpBestBtn.BackgroundTransparency = 0.3
-tpBestBtn.BorderSizePixel = 0
-tpBestBtn.Text = "🚀 TP Meilleur Brainrot (Tapis requis)"
-tpBestBtn.TextColor3 = COLORS.textPrimary
-tpBestBtn.Font = Enum.Font.GothamBold
-tpBestBtn.TextSize = 13
-tpBestBtn.Parent = p1
-Instance.new("UICorner", tpBestBtn).CornerRadius = UDim.new(0, 10)
+-- ===== PARAMÈTRE TP =====
+MohaHub.Parametres.TPGui_Actif = false
+CreateToggle(p1, "🚀 TP Meilleur Brainrot", false, function(v) MohaHub.Parametres.TPGui_Actif = v end)
 
-tpBestBtn.MouseButton1Click:Connect(function()
-    local char = LocalPlayer.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    if not root or not DossierPlots then return end
+-- ===== PARAMÈTRE CLONE =====
+MohaHub.Parametres.CloneGui_Actif = false
+CreateToggle(p1, "🧒 Auto Clone Panel", false, function(v) MohaHub.Parametres.CloneGui_Actif = v end)
 
-    -- Vérifier si le joueur a le tapis
-    local hasTapis = false
-    if char then
-        for _, item in pairs(char:GetChildren()) do
-            if item:IsA("Tool") and (item.Name:lower():find("tapis") or item.Name:lower():find("mat") or item.Name:lower():find("carpet") or item.Name:lower():find("rug")) then
-                hasTapis = true
-                break
-            end
-        end
-    end
-    if not hasTapis then
-        -- Chercher dans le Backpack
-        for _, item in pairs(LocalPlayer.Backpack:GetChildren()) do
-            if item:IsA("Tool") and (item.Name:lower():find("tapis") or item.Name:lower():find("mat") or item.Name:lower():find("carpet") or item.Name:lower():find("rug")) then
-                hasTapis = true
-                break
-            end
-        end
-    end
+-- ==================== MINI GUI: TP BRAINROT ====================
+local TPMiniGui = Instance.new("ScreenGui")
+TPMiniGui.Name = "MohaTPMini"
+TPMiniGui.Parent = HubParent
+TPMiniGui.ResetOnSpawn = false
+TPMiniGui.Enabled = false
+TPMiniGui.DisplayOrder = 998
 
-    if not hasTapis then
-        tpBestBtn.Text = "❌ Tapis non trouvé !"
-        task.delay(1.5, function() tpBestBtn.Text = "🚀 TP Meilleur Brainrot (Tapis requis)" end)
-        return
-    end
+local tpFrame = Instance.new("Frame")
+tpFrame.Size = UDim2.new(0, 220, 0, 110)
+tpFrame.Position = UDim2.new(0, 10, 0.5, -55)
+tpFrame.BackgroundColor3 = Color3.fromRGB(12, 8, 22)
+tpFrame.BorderSizePixel = 0
+tpFrame.Parent = TPMiniGui
+Instance.new("UICorner", tpFrame).CornerRadius = UDim.new(0, 12)
+local tpStroke = Instance.new("UIStroke", tpFrame)
+tpStroke.Color = COLORS.accent2
+tpStroke.Thickness = 1.5
 
-    -- Trouver le meilleur brainrot du serveur
-    local bestVal = -1
-    local bestPos = nil
-    local bestName = "?"
-    for _, plot in pairs(DossierPlots:GetChildren()) do
-        local animalPodiums = plot:FindFirstChild("AnimalPodiums")
-        if not animalPodiums then continue end
-        local stealHitbox = plot:FindFirstChild("StealHitbox")
-        for _, podium in pairs(animalPodiums:GetChildren()) do
-            for _, desc in pairs(podium:GetDescendants()) do
-                if desc:IsA("Model") and MohaHub.Heros[desc.Name] then
-                    local heroData = MohaHub.Heros[desc.Name]
-                    local val = heroData and heroData.ValeurNum or 0
-                    if val > bestVal then
-                        bestVal = val
-                        bestName = desc.Name
-                        bestPos = stealHitbox and stealHitbox.Position or plot:FindFirstChild("MainRoot") and plot.MainRoot.Position
+local tpTitle = Instance.new("TextLabel")
+tpTitle.Size = UDim2.new(1, 0, 0, 28)
+tpTitle.BackgroundTransparency = 1
+tpTitle.Text = "🚀 TP Meilleur Brainrot"
+tpTitle.TextColor3 = COLORS.accent2
+tpTitle.Font = Enum.Font.GothamBold
+tpTitle.TextSize = 13
+tpTitle.Parent = tpFrame
+
+local tpInfoLabel = Instance.new("TextLabel")
+tpInfoLabel.Size = UDim2.new(1, -16, 0, 20)
+tpInfoLabel.Position = UDim2.new(0, 8, 0, 28)
+tpInfoLabel.BackgroundTransparency = 1
+tpInfoLabel.Text = "Scan en cours..."
+tpInfoLabel.TextColor3 = COLORS.textSecondary
+tpInfoLabel.Font = Enum.Font.Gotham
+tpInfoLabel.TextSize = 11
+tpInfoLabel.TextXAlignment = Enum.TextXAlignment.Left
+tpInfoLabel.Parent = tpFrame
+
+local tpActionBtn = Instance.new("TextButton")
+tpActionBtn.Size = UDim2.new(1, -20, 0, 36)
+tpActionBtn.Position = UDim2.new(0, 10, 1, -46)
+tpActionBtn.BackgroundColor3 = COLORS.accent2
+tpActionBtn.BackgroundTransparency = 0.2
+tpActionBtn.Text = "⚡ TP MAINTENANT"
+tpActionBtn.TextColor3 = Color3.new(1,1,1)
+tpActionBtn.Font = Enum.Font.GothamBold
+tpActionBtn.TextSize = 14
+tpActionBtn.BorderSizePixel = 0
+tpActionBtn.Parent = tpFrame
+Instance.new("UICorner", tpActionBtn).CornerRadius = UDim.new(0, 8)
+
+-- Stocker la position du meilleur brainrot
+local bestTPPos = nil
+local bestTPName = "?"
+
+-- Scan continu pour le TP
+task.spawn(function()
+    while true do
+        if MohaHub.Parametres.TPGui_Actif and DossierPlots then
+            TPMiniGui.Enabled = true
+            local bVal, bName, bPos = -1, "Aucun", nil
+            for _, plot in pairs(DossierPlots:GetChildren()) do
+                local ap = plot:FindFirstChild("AnimalPodiums")
+                if not ap then continue end
+                local sh = plot:FindFirstChild("StealHitbox")
+                for _, podium in pairs(ap:GetChildren()) do
+                    for _, desc in pairs(podium:GetDescendants()) do
+                        if desc:IsA("Model") and MohaHub.Heros[desc.Name] then
+                            local hd = MohaHub.Heros[desc.Name]
+                            local val = hd and hd.ValeurNum or 0
+                            if val > bVal then
+                                bVal = val
+                                bName = desc.Name
+                                bPos = sh and sh.Position or plot:FindFirstChild("MainRoot") and plot.MainRoot.Position
+                            end
+                        end
                     end
                 end
             end
+            bestTPPos = bPos
+            bestTPName = bName
+            if bPos then
+                tpInfoLabel.Text = "🏆 " .. bName .. " ($" .. tostring(bVal) .. ")"
+            else
+                tpInfoLabel.Text = "❌ Aucun brainrot trouvé"
+            end
+        else
+            TPMiniGui.Enabled = false
         end
-    end
-
-    if bestPos then
-        root.CFrame = CFrame.new(bestPos + Vector3.new(0, 3, 0))
-        tpBestBtn.Text = "✅ TP vers " .. bestName .. " !"
-        print("[MohaHub] TP vers " .. bestName)
-        task.delay(2, function() tpBestBtn.Text = "🚀 TP Meilleur Brainrot (Tapis requis)" end)
-    else
-        tpBestBtn.Text = "❌ Aucun brainrot trouvé"
-        task.delay(1.5, function() tpBestBtn.Text = "🚀 TP Meilleur Brainrot (Tapis requis)" end)
+        task.wait(2)
     end
 end)
 
--- Bouton Auto Clone
-local cloneBtn = Instance.new("TextButton")
-cloneBtn.Size = UDim2.new(1, 0, 0, 42)
-cloneBtn.BackgroundColor3 = COLORS.accent3
-cloneBtn.BackgroundTransparency = 0.3
-cloneBtn.BorderSizePixel = 0
-cloneBtn.Text = "🧒 Auto Clone + Swap"
-cloneBtn.TextColor3 = COLORS.textPrimary
-cloneBtn.Font = Enum.Font.GothamBold
-cloneBtn.TextSize = 13
-cloneBtn.Parent = p1
-Instance.new("UICorner", cloneBtn).CornerRadius = UDim.new(0, 10)
-
-cloneBtn.MouseButton1Click:Connect(function()
-    local ok = pcall(function()
-        local net = require(game:GetService("ReplicatedStorage"):WaitForChild("Packages"):WaitForChild("Net"))
-        -- Placer le clone (UseItem)
-        net:RemoteEvent("UseItem"):FireServer()
-        cloneBtn.Text = "⏳ Clone placé, swap en cours..."
-        task.wait(0.5)
-        -- Swap avec le clone
-        net:RemoteEvent("QuantumCloner/OnTeleport"):FireServer()
-        cloneBtn.Text = "✅ Clone + Swap réussi !"
-    end)
-    if not ok then
-        cloneBtn.Text = "❌ Erreur Clone (pas d'outil ?)"
+tpActionBtn.MouseButton1Click:Connect(function()
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root or not bestTPPos then
+        tpActionBtn.Text = "❌ Pas de cible"
+        task.delay(1, function() tpActionBtn.Text = "⚡ TP MAINTENANT" end)
+        return
     end
-    task.delay(2, function() cloneBtn.Text = "🧒 Auto Clone + Swap" end)
+    root.CFrame = CFrame.new(bestTPPos + Vector3.new(0, 3, 0))
+    tpActionBtn.Text = "✅ TP vers " .. bestTPName
+    print("[MohaHub] TP vers " .. bestTPName)
+    task.delay(1.5, function() tpActionBtn.Text = "⚡ TP MAINTENANT" end)
+end)
+
+-- ==================== MINI GUI: CLONE ====================
+local CloneMiniGui = Instance.new("ScreenGui")
+CloneMiniGui.Name = "MohaCloneMini"
+CloneMiniGui.Parent = HubParent
+CloneMiniGui.ResetOnSpawn = false
+CloneMiniGui.Enabled = false
+CloneMiniGui.DisplayOrder = 997
+
+local cloneFrame = Instance.new("Frame")
+cloneFrame.Size = UDim2.new(0, 220, 0, 120)
+cloneFrame.Position = UDim2.new(0, 10, 0.5, 70)
+cloneFrame.BackgroundColor3 = Color3.fromRGB(12, 8, 22)
+cloneFrame.BorderSizePixel = 0
+cloneFrame.Parent = CloneMiniGui
+Instance.new("UICorner", cloneFrame).CornerRadius = UDim.new(0, 12)
+local cloneStroke = Instance.new("UIStroke", cloneFrame)
+cloneStroke.Color = COLORS.accent3
+cloneStroke.Thickness = 1.5
+
+local cloneTitle = Instance.new("TextLabel")
+cloneTitle.Size = UDim2.new(1, 0, 0, 28)
+cloneTitle.BackgroundTransparency = 1
+cloneTitle.Text = "🧒 Quantum Cloner"
+cloneTitle.TextColor3 = COLORS.accent3
+cloneTitle.Font = Enum.Font.GothamBold
+cloneTitle.TextSize = 13
+cloneTitle.Parent = cloneFrame
+
+local clonePlaceBtn = Instance.new("TextButton")
+clonePlaceBtn.Size = UDim2.new(1, -20, 0, 32)
+clonePlaceBtn.Position = UDim2.new(0, 10, 0, 32)
+clonePlaceBtn.BackgroundColor3 = COLORS.accent3
+clonePlaceBtn.BackgroundTransparency = 0.3
+clonePlaceBtn.Text = "📍 Placer Clone"
+clonePlaceBtn.TextColor3 = Color3.new(1,1,1)
+clonePlaceBtn.Font = Enum.Font.GothamBold
+clonePlaceBtn.TextSize = 13
+clonePlaceBtn.BorderSizePixel = 0
+clonePlaceBtn.Parent = cloneFrame
+Instance.new("UICorner", clonePlaceBtn).CornerRadius = UDim.new(0, 8)
+
+local cloneSwapBtn = Instance.new("TextButton")
+cloneSwapBtn.Size = UDim2.new(1, -20, 0, 32)
+cloneSwapBtn.Position = UDim2.new(0, 10, 0, 72)
+cloneSwapBtn.BackgroundColor3 = COLORS.accent1
+cloneSwapBtn.BackgroundTransparency = 0.3
+cloneSwapBtn.Text = "🔄 Swap avec Clone"
+cloneSwapBtn.TextColor3 = Color3.new(1,1,1)
+cloneSwapBtn.Font = Enum.Font.GothamBold
+cloneSwapBtn.TextSize = 13
+cloneSwapBtn.BorderSizePixel = 0
+cloneSwapBtn.Parent = cloneFrame
+Instance.new("UICorner", cloneSwapBtn).CornerRadius = UDim.new(0, 8)
+
+-- Toggle visibility
+task.spawn(function()
+    while true do
+        CloneMiniGui.Enabled = MohaHub.Parametres.CloneGui_Actif
+        task.wait(0.5)
+    end
+end)
+
+clonePlaceBtn.MouseButton1Click:Connect(function()
+    pcall(function()
+        local net = require(game:GetService("ReplicatedStorage"):WaitForChild("Packages"):WaitForChild("Net"))
+        net:RemoteEvent("UseItem"):FireServer()
+        clonePlaceBtn.Text = "✅ Clone placé !"
+        task.delay(1.5, function() clonePlaceBtn.Text = "📍 Placer Clone" end)
+    end)
+end)
+
+cloneSwapBtn.MouseButton1Click:Connect(function()
+    pcall(function()
+        local net = require(game:GetService("ReplicatedStorage"):WaitForChild("Packages"):WaitForChild("Net"))
+        net:RemoteEvent("QuantumCloner/OnTeleport"):FireServer()
+        cloneSwapBtn.Text = "✅ Swappé !"
+        task.delay(1.5, function() cloneSwapBtn.Text = "🔄 Swap avec Clone" end)
+    end)
 end)
 
 -- Page 2 : ESP
@@ -1063,9 +1151,16 @@ end
 local function JoueurTientBrainrot()
     local char = LocalPlayer.Character
     if not char then return false end
+    local hum = char:FindFirstChildWhichIsA("Humanoid")
+    if not hum then return false end
+    -- Check si un Model est tenu (pas un outil classique, pas un chapeau)
     for _, c in pairs(char:GetChildren()) do
-        if c:IsA("Model") and MohaHub.Heros[c.Name] then return true end
-        if c:IsA("Tool") and MohaHub.Heros[c.Name] then return true end
+        if c:IsA("Model") and c:FindFirstChildWhichIsA("BasePart") then
+            -- Exclure le personnage lui-même
+            if c ~= char and c.Name ~= char.Name then
+                return true
+            end
+        end
     end
     return false
 end
@@ -1108,16 +1203,19 @@ local function ExecuterAutoGrab()
         if not animalPodiums then continue end
 
         for _, podium in pairs(animalPodiums:GetChildren()) do
-            -- Vérifier d'abord si le podium a un brainrot
+            -- Trouver le nom du brainrot sur ce podium (juste pour l'affichage)
             local brainrotName = nil
             for _, child in pairs(podium:GetDescendants()) do
-                if child:IsA("Model") and MohaHub.Heros[child.Name] then
-                    brainrotName = child.Name
-                    break
+                if child:IsA("Model") and child.Name ~= podium.Name then
+                    -- Essayer le dictionnaire connu, sinon prendre le nom du Model
+                    if MohaHub.Heros[child.Name] then
+                        brainrotName = child.Name
+                        break
+                    elseif not brainrotName and child:FindFirstChildWhichIsA("BasePart") then
+                        brainrotName = child.Name -- Fallback: tout Model avec des Parts
+                    end
                 end
             end
-            -- Si pas de brainrot sur ce podium, skip
-            if not brainrotName then continue end
 
             for _, desc in pairs(podium:GetDescendants()) do
                 if desc:IsA("ProximityPrompt") then
@@ -1125,7 +1223,10 @@ local function ExecuterAutoGrab()
                     local at = desc.ActionText:lower()
                     if at == "unlock base" or at == "toggle" then continue end
 
-                    -- Calculer la distance avec le StealHitbox ou le podium
+                    -- Vérifier que le prompt est activé
+                    if not desc.Enabled then continue end
+
+                    -- Calculer la distance avec le StealHitbox du plot
                     local stealHitbox = plot:FindFirstChild("StealHitbox")
                     local distPart = stealHitbox or podium:FindFirstChildWhichIsA("BasePart")
                     if not distPart then continue end
@@ -1133,8 +1234,12 @@ local function ExecuterAutoGrab()
                     local dist = (root.Position - distPart.Position).Magnitude
                     if dist > range then continue end
 
-                    local heroData = MohaHub.Heros[brainrotName]
-                    local val = heroData and heroData.ValeurNum or 0
+                    -- Valeur du brainrot (0 si inconnu)
+                    local val = 0
+                    local displayName = brainrotName or ("Podium " .. podium.Name)
+                    if brainrotName and MohaHub.Heros[brainrotName] then
+                        val = MohaHub.Heros[brainrotName].ValeurNum or 0
+                    end
 
                     local isBetter = false
                     if mode == "Nearest" then
@@ -1147,7 +1252,7 @@ local function ExecuterAutoGrab()
                         bestDist = dist
                         bestVal = val
                         bestPrompt = desc
-                        nomCible = brainrotName
+                        nomCible = displayName
                     end
                 end
             end
@@ -1832,12 +1937,20 @@ task.spawn(function()
                     baseEspObjects[plot] = nil
                 elseif root then
                     local dist = math.floor((root.Position - data.center.Position).Magnitude)
-                    -- Compter les brainrots dans AnimalPodiums
+                    -- Compter les brainrots actifs (podiums avec un Model + prompt actif)
                     local brainrotCount = 0
                     local animalPodiums = plot:FindFirstChild("AnimalPodiums")
                     if animalPodiums then
-                        for _, desc in pairs(animalPodiums:GetDescendants()) do
-                            if desc:IsA("Model") and MohaHub.Heros[desc.Name] then
+                        for _, podium in pairs(animalPodiums:GetChildren()) do
+                            -- Un podium a un brainrot si il contient un Model qui n'est pas le podium lui-même
+                            local hasModel = false
+                            for _, child in pairs(podium:GetDescendants()) do
+                                if child:IsA("Model") and child.Name ~= podium.Name and child:FindFirstChildWhichIsA("BasePart") then
+                                    hasModel = true
+                                    break
+                                end
+                            end
+                            if hasModel then
                                 brainrotCount = brainrotCount + 1
                             end
                         end
