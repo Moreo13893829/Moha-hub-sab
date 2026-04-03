@@ -647,9 +647,119 @@ CreateSection(p1, "AUTO-GRAB ENGINE")
 CreateToggle(p1, "🟢 Activer Auto Grab", false, function(v) MohaHub.Parametres.AutoGrab_Actif = v end)
 CreateToggle(p1, "🧠 Voler aussi les Brainrots", true, function(v) MohaHub.Parametres.GrabBrainrots = v end)
 CreateToggle(p1, "🔮 Afficher cercle visuel", true, function(v) MohaHub.Parametres.AfficherCercle = v end)
-CreateSlider(p1, "📏 Range (Studs)", 1, 20, 10, " studs", function(v) MohaHub.Parametres.GrabRange = v end)
-CreateSlider(p1, "⏱️ Délai de vol", 0.1, 5.0, 1.0, "s", function(v) MohaHub.Parametres.GrabDelay = v end)
+CreateSlider(p1, "📏 Range (Studs)", 1, 50, 10, " studs", function(v) MohaHub.Parametres.GrabRange = v end)
+CreateSlider(p1, "⏱️ Délai de vol", 1.0, 5.0, 1.0, "s", function(v) MohaHub.Parametres.GrabDelay = v end)
 CreateDropdown(p1, "🎯 Priorité", {"Highest", "Nearest"}, "Highest", function(v) MohaHub.Parametres.GrabMode = v end)
+
+CreateSection(p1, "OUTILS")
+
+-- Bouton TP vers le meilleur brainrot
+local tpBestBtn = Instance.new("TextButton")
+tpBestBtn.Size = UDim2.new(1, 0, 0, 42)
+tpBestBtn.BackgroundColor3 = COLORS.accent2
+tpBestBtn.BackgroundTransparency = 0.3
+tpBestBtn.BorderSizePixel = 0
+tpBestBtn.Text = "🚀 TP Meilleur Brainrot (Tapis requis)"
+tpBestBtn.TextColor3 = COLORS.textPrimary
+tpBestBtn.Font = Enum.Font.GothamBold
+tpBestBtn.TextSize = 13
+tpBestBtn.Parent = p1
+Instance.new("UICorner", tpBestBtn).CornerRadius = UDim.new(0, 10)
+
+tpBestBtn.MouseButton1Click:Connect(function()
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root or not DossierPlots then return end
+
+    -- Vérifier si le joueur a le tapis
+    local hasTapis = false
+    if char then
+        for _, item in pairs(char:GetChildren()) do
+            if item:IsA("Tool") and (item.Name:lower():find("tapis") or item.Name:lower():find("mat") or item.Name:lower():find("carpet") or item.Name:lower():find("rug")) then
+                hasTapis = true
+                break
+            end
+        end
+    end
+    if not hasTapis then
+        -- Chercher dans le Backpack
+        for _, item in pairs(LocalPlayer.Backpack:GetChildren()) do
+            if item:IsA("Tool") and (item.Name:lower():find("tapis") or item.Name:lower():find("mat") or item.Name:lower():find("carpet") or item.Name:lower():find("rug")) then
+                hasTapis = true
+                break
+            end
+        end
+    end
+
+    if not hasTapis then
+        tpBestBtn.Text = "❌ Tapis non trouvé !"
+        task.delay(1.5, function() tpBestBtn.Text = "🚀 TP Meilleur Brainrot (Tapis requis)" end)
+        return
+    end
+
+    -- Trouver le meilleur brainrot du serveur
+    local bestVal = -1
+    local bestPos = nil
+    local bestName = "?"
+    for _, plot in pairs(DossierPlots:GetChildren()) do
+        local animalPodiums = plot:FindFirstChild("AnimalPodiums")
+        if not animalPodiums then continue end
+        local stealHitbox = plot:FindFirstChild("StealHitbox")
+        for _, podium in pairs(animalPodiums:GetChildren()) do
+            for _, desc in pairs(podium:GetDescendants()) do
+                if desc:IsA("Model") and MohaHub.Heros[desc.Name] then
+                    local heroData = MohaHub.Heros[desc.Name]
+                    local val = heroData and heroData.ValeurNum or 0
+                    if val > bestVal then
+                        bestVal = val
+                        bestName = desc.Name
+                        bestPos = stealHitbox and stealHitbox.Position or plot:FindFirstChild("MainRoot") and plot.MainRoot.Position
+                    end
+                end
+            end
+        end
+    end
+
+    if bestPos then
+        root.CFrame = CFrame.new(bestPos + Vector3.new(0, 3, 0))
+        tpBestBtn.Text = "✅ TP vers " .. bestName .. " !"
+        print("[MohaHub] TP vers " .. bestName)
+        task.delay(2, function() tpBestBtn.Text = "🚀 TP Meilleur Brainrot (Tapis requis)" end)
+    else
+        tpBestBtn.Text = "❌ Aucun brainrot trouvé"
+        task.delay(1.5, function() tpBestBtn.Text = "🚀 TP Meilleur Brainrot (Tapis requis)" end)
+    end
+end)
+
+-- Bouton Auto Clone
+local cloneBtn = Instance.new("TextButton")
+cloneBtn.Size = UDim2.new(1, 0, 0, 42)
+cloneBtn.BackgroundColor3 = COLORS.accent3
+cloneBtn.BackgroundTransparency = 0.3
+cloneBtn.BorderSizePixel = 0
+cloneBtn.Text = "🧒 Auto Clone + Swap"
+cloneBtn.TextColor3 = COLORS.textPrimary
+cloneBtn.Font = Enum.Font.GothamBold
+cloneBtn.TextSize = 13
+cloneBtn.Parent = p1
+Instance.new("UICorner", cloneBtn).CornerRadius = UDim.new(0, 10)
+
+cloneBtn.MouseButton1Click:Connect(function()
+    local ok = pcall(function()
+        local net = require(game:GetService("ReplicatedStorage"):WaitForChild("Packages"):WaitForChild("Net"))
+        -- Placer le clone (UseItem)
+        net:RemoteEvent("UseItem"):FireServer()
+        cloneBtn.Text = "⏳ Clone placé, swap en cours..."
+        task.wait(0.5)
+        -- Swap avec le clone
+        net:RemoteEvent("QuantumCloner/OnTeleport"):FireServer()
+        cloneBtn.Text = "✅ Clone + Swap réussi !"
+    end)
+    if not ok then
+        cloneBtn.Text = "❌ Erreur Clone (pas d'outil ?)"
+    end
+    task.delay(2, function() cloneBtn.Text = "🧒 Auto Clone + Swap" end)
+end)
 
 -- Page 2 : ESP
 local p2 = TabPages[2]
@@ -993,54 +1103,51 @@ local function ExecuterAutoGrab()
         end
         if isMine then continue end
 
-        -- Vérifier la distance avec le StealHitbox du plot
-        local stealHitbox = plot:FindFirstChild("StealHitbox")
-        local plotCenter = stealHitbox or plot:FindFirstChild("MainRoot") or plot:FindFirstChildWhichIsA("BasePart")
-        if not plotCenter then continue end
-
-        local plotDist = (root.Position - plotCenter.Position).Magnitude
-        if plotDist > range * 3 then continue end -- Skip les plots trop loin (optimisation)
-
         -- Chercher les prompts UNIQUEMENT dans AnimalPodiums
         local animalPodiums = plot:FindFirstChild("AnimalPodiums")
         if not animalPodiums then continue end
 
         for _, podium in pairs(animalPodiums:GetChildren()) do
+            -- Vérifier d'abord si le podium a un brainrot
+            local brainrotName = nil
+            for _, child in pairs(podium:GetDescendants()) do
+                if child:IsA("Model") and MohaHub.Heros[child.Name] then
+                    brainrotName = child.Name
+                    break
+                end
+            end
+            -- Si pas de brainrot sur ce podium, skip
+            if not brainrotName then continue end
+
             for _, desc in pairs(podium:GetDescendants()) do
                 if desc:IsA("ProximityPrompt") then
                     -- Ignorer les prompts non-steal
                     local at = desc.ActionText:lower()
                     if at == "unlock base" or at == "toggle" then continue end
 
-                    -- Calculer la distance avec le Spawn du podium
-                    local spawnPart = podium:FindFirstChild("Base") and podium.Base:FindFirstChild("Spawn")
-                    local distPart = spawnPart or podium:FindFirstChildWhichIsA("BasePart")
+                    -- Calculer la distance avec le StealHitbox ou le podium
+                    local stealHitbox = plot:FindFirstChild("StealHitbox")
+                    local distPart = stealHitbox or podium:FindFirstChildWhichIsA("BasePart")
                     if not distPart then continue end
 
                     local dist = (root.Position - distPart.Position).Magnitude
                     if dist > range then continue end
 
-                    -- Trouver le brainrot sur ce podium
-                    local brainrotName = "Brainrot"
-                    for _, child in pairs(podium:GetDescendants()) do
-                        if child:IsA("Model") and MohaHub.Heros[child.Name] then
-                            brainrotName = child.Name
-                            break
-                        end
-                    end
-
                     local heroData = MohaHub.Heros[brainrotName]
                     local val = heroData and heroData.ValeurNum or 0
 
-                    if mode == "Nearest" and dist < bestDist then
+                    local isBetter = false
+                    if mode == "Nearest" then
+                        isBetter = dist < bestDist
+                    elseif mode == "Highest" then
+                        isBetter = val > bestVal or (val == bestVal and dist < bestDist)
+                    end
+
+                    if isBetter then
                         bestDist = dist
-                        bestPrompt = desc
-                        nomCible = brainrotName
-                    elseif mode == "Highest" and val > bestVal then
                         bestVal = val
                         bestPrompt = desc
                         nomCible = brainrotName
-                        bestDist = dist
                     end
                 end
             end
@@ -1542,33 +1649,53 @@ end
 local function CreateBaseESP(plot)
     if baseEspObjects[plot] then return end
 
-    -- Trouver le centre du plot
-    local center = nil
-    for _, child in pairs(plot:GetChildren()) do
-        if child:IsA("BasePart") and (child.Name == "Base" or child.Name == "Floor" or child.Name == "Ground") then
-            center = child
-            break
-        end
-    end
+    -- Trouver le centre du plot (on sait que MainRoot existe)
+    local center = plot:FindFirstChild("MainRoot") or plot:FindFirstChild("Spawn")
     if not center then
-        -- Fallback: premier BasePart trouvé
         center = plot:FindFirstChildWhichIsA("BasePart")
     end
     if not center then return end
 
-    -- Trouver le propriétaire (Système robuste)
+    -- Trouver le propriétaire
+    -- Le jeu utilise des UUID comme noms de plots, donc on cherche le Owner
     local ownerName = MohaHub:ExtraireProprio(plot)
     
-    -- Si vraiment vide (pas de proprio et pas de brainrots), on skip
-    if not ownerName and MohaHub:EstVide(plot) then 
-        if baseEspObjects[plot] then
-            baseEspObjects[plot].billboard:Destroy()
-            baseEspObjects[plot] = nil
+    -- Si pas de proprio classique, chercher si un joueur est lié à ce plot
+    if not ownerName then
+        -- Certains jeux stockent le lien joueur-plot dans le Workspace
+        for _, player in pairs(Players:GetPlayers()) do
+            if player == LocalPlayer then continue end
+            -- Vérifier si le plot a des objets liés au joueur
+            local plotSign = plot:FindFirstChild("PlotSign")
+            if plotSign then
+                for _, desc in pairs(plotSign:GetDescendants()) do
+                    if (desc:IsA("TextLabel") or desc:IsA("TextButton")) and desc.Text ~= "" then
+                        if desc.Text:find(player.DisplayName) or desc.Text:find(player.Name) then
+                            ownerName = player.DisplayName
+                            break
+                        end
+                    end
+                end
+            end
+            if ownerName then break end
         end
-        return 
+    end
+
+    -- Si toujours pas de proprio, vérifier si le plot a des brainrots
+    local hasBrainrots = false
+    local animalPodiums = plot:FindFirstChild("AnimalPodiums")
+    if animalPodiums then
+        for _, desc in pairs(animalPodiums:GetDescendants()) do
+            if desc:IsA("Model") and MohaHub.Heros[desc.Name] then
+                hasBrainrots = true
+                break
+            end
+        end
     end
     
-    ownerName = ownerName or "Base Inconnue"
+    -- Si vraiment vide (pas de proprio ET pas de brainrots), on skip
+    if not ownerName and not hasBrainrots then return end
+    ownerName = ownerName or "Base Occupée"
 
     local bb = Instance.new("BillboardGui")
     bb.Name = "BaseESP_" .. plot.Name:sub(1, 8)
@@ -1703,62 +1830,36 @@ task.spawn(function()
                 if not plot.Parent or not data.center or not data.center.Parent then
                     data.billboard:Destroy()
                     baseEspObjects[plot] = nil
-                else
-                    -- Vérifier si le proprio est toujours là
-                    local currentOwner = MohaHub:ExtraireProprio(plot)
-                    if not currentOwner then
-                        -- Plus de proprio = base vide, on supprime l'ESP
-                        data.billboard:Destroy()
-                        baseEspObjects[plot] = nil
-                    elseif root then
-                        local dist = math.floor((root.Position - data.center.Position).Magnitude)
-                        -- Compter les brainrots dans ce plot
-                        local brainrotCount = 0
-                        for _, desc in pairs(plot:GetDescendants()) do
+                elseif root then
+                    local dist = math.floor((root.Position - data.center.Position).Magnitude)
+                    -- Compter les brainrots dans AnimalPodiums
+                    local brainrotCount = 0
+                    local animalPodiums = plot:FindFirstChild("AnimalPodiums")
+                    if animalPodiums then
+                        for _, desc in pairs(animalPodiums:GetDescendants()) do
                             if desc:IsA("Model") and MohaHub.Heros[desc.Name] then
                                 brainrotCount = brainrotCount + 1
                             end
                         end
-                        data.infoLabel.Text = "🧠 " .. brainrotCount .. " brainrots · 📏 " .. dist .. "m"
+                    end
+                    data.infoLabel.Text = "🧠 " .. brainrotCount .. " brainrots · 📏 " .. dist .. "m"
 
-                        -- Timer de protection steal
-                        local isP = MohaHub:EstProtege(plot)
-                        local stealTimer = plot:GetAttribute("StealTimer") or plot:GetAttribute("StealCooldown") or plot:GetAttribute("Timer")
-                        
-                        if isP then
-                            data.timerLabel.Text = "🔒 Protégé / Privé"
-                            data.timerLabel.TextColor3 = COLORS.accent1
-                        elseif stealTimer and type(stealTimer) == "number" then
-                            local serverTime = Workspace:GetServerTimeNow()
-                            local remaining = math.max(0, stealTimer - serverTime)
-                            if remaining > 0 then
-                                local mins = math.floor(remaining / 60)
-                                local secs = math.floor(remaining % 60)
-                                data.timerLabel.Text = "⏱ Protection: " .. string.format("%d:%02d", mins, secs)
-                                data.timerLabel.TextColor3 = COLORS.red
-                            else
-                                data.timerLabel.Text = "⏱ Vulnérable !"
-                                data.timerLabel.TextColor3 = COLORS.green
-                            end
-                        else
-                            -- Chercher un timer dans les enfants
-                            local timerVal = nil
-                            for _, child in pairs(plot:GetChildren()) do
-                                if child:IsA("NumberValue") and (child.Name:lower():find("timer") or child.Name:lower():find("cooldown") or child.Name:lower():find("steal")) then
-                                    timerVal = child.Value
-                                    break
-                                end
-                            end
-                            if timerVal and timerVal > 0 then
-                                local mins = math.floor(timerVal / 60)
-                                local secs = math.floor(timerVal % 60)
-                                data.timerLabel.Text = "⏱ " .. string.format("%d:%02d", mins, secs)
-                                data.timerLabel.TextColor3 = COLORS.accent2
-                            else
-                                data.timerLabel.Text = "⏱ Prêt à voler"
-                                data.timerLabel.TextColor3 = COLORS.green
-                            end
-                        end
+                    -- Timer de protection: Laser check + Timer scraping
+                    local isProtected = MohaHub:EstProtege(plot)
+                    local scrapedTimer = ScrapeTimerFromUI(plot)
+                    
+                    if isProtected then
+                        data.timerLabel.Text = "🔒 Lasers Actifs"
+                        data.timerLabel.TextColor3 = COLORS.red
+                    elseif scrapedTimer then
+                        data.timerLabel.Text = "⏱ " .. scrapedTimer
+                        data.timerLabel.TextColor3 = COLORS.accent2
+                    elseif brainrotCount == 0 then
+                        data.timerLabel.Text = "📭 Vide"
+                        data.timerLabel.TextColor3 = COLORS.textSecondary
+                    else
+                        data.timerLabel.Text = "⏱ Prêt à voler"
+                        data.timerLabel.TextColor3 = COLORS.green
                     end
                 end
             end
