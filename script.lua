@@ -53,6 +53,25 @@ local MohaHub = {
     }
 }
 
+function MohaHub:EstProtege(plot)
+    if not plot then return false end
+    -- Check common Attributes
+    if plot:GetAttribute("ShieldActive") or plot:GetAttribute("Locked") or plot:GetAttribute("Private") or plot:GetAttribute("Shield") or plot:GetAttribute("StealProtected") then
+        return true
+    end
+    -- Check common Child Names (recursive)
+    for _, desc in pairs(plot:GetDescendants()) do
+        local n = desc.Name:lower()
+        if desc:IsA("BasePart") and desc.Transparency < 0.9 and (n:find("shield") or n:find("forcefield") or n:find("laser") or n:find("gate") or n:find("lock") or n:find("anti")) then
+            return true
+        end
+        if (desc:IsA("BoolValue") or desc:IsA("StringValue")) and (n:find("locked") or n:find("private") or n:find("shield")) and desc.Value == true then
+            return true
+        end
+    end
+    return false
+end
+
 function MohaHub:AjouterHero(nom, config)
     if not config.ValeurNum then
         if config.Prix then config.ValeurNum = ConvertirEnNombre(config.Prix)
@@ -320,7 +339,7 @@ for i, tabName in ipairs(TAB_NAMES) do
     pp.Parent = page
 
     btn.MouseButton1Click:Connect(function()
-        currentTab = i
+        local _currentTab = i
         for j, b in ipairs(TabButtons) do
             local active = (j == i)
             TweenService:Create(b, TweenInfo.new(0.25), {
@@ -889,6 +908,14 @@ local function TrouverTousPrompts(plot)
     return prompts
 end
 
+local function VerifierProtectionPlot(plot)
+    local owner = plot:FindFirstChild("Owner") or plot:FindFirstChild("PlotOwner")
+    if not owner or (owner:IsA("ObjectValue") and not owner.Value) or (owner:IsA("StringValue") and owner.Value == "") then
+        return true -- Considéré comme vide/non-revendiqué
+    end
+    return MohaHub:EstProtege(plot)
+end
+
 local function ExecuterAutoGrab()
     if enCoursDeGrab then return end
     local char = LocalPlayer.Character
@@ -914,9 +941,8 @@ local function ExecuterAutoGrab()
         end
         if isMine then continue end
 
-        -- Vérifier si le plot est protégé/fermé
-        local isProtected = plot:GetAttribute("ShieldActive") or plot:GetAttribute("Locked") or plot:FindFirstChild("Shield") or plot:FindFirstChild("ForceField")
-        if isProtected then continue end
+        -- Vérifier si le plot est protégé/fermé (système exhaustif)
+        if VerifierProtectionPlot(plot) then continue end
 
         -- Trouver prompts de vol
         local prompts = TrouverTousPrompts(plot)
@@ -1481,14 +1507,24 @@ local function CreateBaseESP(plot)
     if not center then return end
 
     -- Trouver le propriétaire
-    local ownerName = "Personne"
     local owner = plot:FindFirstChild("Owner") or plot:FindFirstChild("PlotOwner")
+    local ownerName = nil
+    
     if owner then
         if owner:IsA("ObjectValue") and owner.Value then
             ownerName = owner.Value.DisplayName or owner.Value.Name
-        elseif owner:IsA("StringValue") and owner.Value ~= "" then
+        elseif owner:IsA("StringValue") and owner.Value ~= "" and owner.Value ~= "Personne" then
             ownerName = owner.Value
         end
+    end
+
+    -- Si pas de proprio, on ne crée pas d'ESP
+    if not ownerName or ownerName == "" or ownerName == "Personne" then 
+        if baseEspObjects[plot] then
+            baseEspObjects[plot].billboard:Destroy()
+            baseEspObjects[plot] = nil
+        end
+        return 
     end
 
     local bb = Instance.new("BillboardGui")
@@ -1634,12 +1670,12 @@ task.spawn(function()
                     end
                     data.infoLabel.Text = "🧠 " .. brainrotCount .. " brainrots · 📏 " .. dist .. "m"
 
-                    -- Timer de protection steal + Détection Shield/Locked
-                    local isP = plot:GetAttribute("ShieldActive") or plot:GetAttribute("Locked") or plot:FindFirstChild("Shield") or plot:FindFirstChild("ForceField")
+                    -- Timer de protection steal + Détection Shield/Locked (système exhaustif)
+                    local isP = MohaHub:EstProtege(plot)
                     local stealTimer = plot:GetAttribute("StealTimer") or plot:GetAttribute("StealCooldown") or plot:GetAttribute("Timer")
                     
                     if isP then
-                        data.timerLabel.Text = "🛡️ Fermé / Protégé"
+                        data.timerLabel.Text = "🔒 Protégé / Privé"
                         data.timerLabel.TextColor3 = COLORS.accent1
                     elseif stealTimer and type(stealTimer) == "number" then
                         local serverTime = Workspace:GetServerTimeNow()
