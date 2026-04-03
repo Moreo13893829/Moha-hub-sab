@@ -889,7 +889,7 @@ local function ExecuterAutoGrab()
 
     local mode = MohaHub.Parametres.GrabMode
     local range = MohaHub.Parametres.GrabRange
-    local bestPrompt, nomCible, bestDist, bestVal = nil, "Cible", math.huge, -1
+    local bestPrompt, bestCFrame, nomCible, bestDist, bestVal = nil, nil, "Cible", math.huge, -1
 
     for _, plot in pairs(DossierPlots:GetChildren()) do
         -- Skip notre propre plot
@@ -902,21 +902,29 @@ local function ExecuterAutoGrab()
         -- Trouver prompts de vol
         local prompts = TrouverTousPrompts(plot)
         for _, prompt in pairs(prompts) do
-            local part = prompt.Parent
-            if part and part:IsA("BasePart") or (part and part:FindFirstChildWhichIsA("BasePart")) then
-                local pos = part:IsA("BasePart") and part.Position or part:FindFirstChildWhichIsA("BasePart").Position
-                local dist = (root.Position - pos).Magnitude
+            -- Filtre de prompt : Doit être un prompt de vol/grab
+            local aText = prompt.ActionText:lower()
+            local pName = prompt.Name:lower()
+            if not (aText:find("steal") or aText:find("voler") or aText:find("grab") or aText:find("prendre") or pName:find("grab")) then
+                continue
+            end
+
+            local parentModel = prompt:FindFirstAncestorWhichIsA("Model")
+            local holderPart = parentModel and parentModel:FindFirstChild("Holder")
+            local targetCFrame = nil
+            
+            if holderPart then
+                local attachment = holderPart:FindFirstChild("BrainrotRootPartAttachement")
+                targetCFrame = attachment and attachment.WorldCFrame or holderPart.CFrame
+                
+                local dist = (root.Position - holderPart.Position).Magnitude
                 if dist <= range then
-                    -- Trouver le brainrot associé à ce prompt
-                    local podium = prompt.Parent and prompt.Parent.Parent and prompt.Parent.Parent.Parent
-                    local brainrotName = "Brainrot"
-                    if podium then
-                        for _, child in pairs(podium:GetDescendants()) do
-                            if child:IsA("Model") and MohaHub.Heros[child.Name] then
-                                brainrotName = child.Name
-                                break
-                            end
-                        end
+                    -- Trouver le brainrot spécifiquement lié à ce prompt
+                    local brainrotName = parentModel.Name
+                    -- Si le parent s'appelle "Prompt" ou "Interaction", on cherche un model frère
+                    if brainrotName == "Prompt" or brainrotName == "Interaction" then
+                        local sibling = parentModel.Parent:FindFirstChildWhichIsA("Model")
+                        if sibling then brainrotName = sibling.Name end
                     end
 
                     local heroData = MohaHub.Heros[brainrotName]
@@ -925,11 +933,14 @@ local function ExecuterAutoGrab()
                     if mode == "Nearest" and dist < bestDist then
                         bestDist = dist
                         bestPrompt = prompt
+                        bestCFrame = targetCFrame
                         nomCible = brainrotName
                     elseif mode == "Highest" and val > bestVal then
                         bestVal = val
                         bestPrompt = prompt
+                        bestCFrame = targetCFrame
                         nomCible = brainrotName
+                        bestDist = dist
                     end
                 end
             end
@@ -953,6 +964,7 @@ local function ExecuterAutoGrab()
     GrabStatusLabel.TextColor3 = COLORS.accent2
     GrabProgressFill.Size = UDim2.new(0, 0, 1, 0)
     GrabBarGlow.BackgroundColor3 = COLORS.accent2
+    print("[MohaHub] Cible identifiée : " .. nomCible .. " à " .. math.floor(bestDist) .. "m")
 
     local temps = MohaHub.Parametres.GrabDelay
     local startTime = tick()
@@ -978,10 +990,10 @@ local function ExecuterAutoGrab()
     GrabBarGlow.BackgroundColor3 = COLORS.green
 
     -- ============================================================
-    -- MÉTHODE SAFE: fireproximityprompt UNIQUEMENT
-    -- Passe par le code légitime du jeu (pas de token/SHA validation)
+    -- MÉTHODE SAFE: MICRO-TELEPORT + fireproximityprompt
     -- ============================================================
     local ok = false
+    local originalCFrame = root.CFrame
     pcall(function()
         local oH = bestPrompt.HoldDuration
         local oM = bestPrompt.MaxActivationDistance
@@ -993,12 +1005,43 @@ local function ExecuterAutoGrab()
         bestPrompt.Enabled = true
         bestPrompt.RequiresLineOfSight = false
 
-        if fireproximityprompt then
-            fireproximityprompt(bestPrompt)
-            ok = true
+        -- Micro-Teleport avec offset vertical pour éviter collision
+        if bestCFrame then
+            root.CFrame = bestCFrame + Vector3.new(0, 2, 0)
+            task.wait(0.08) -- Un peu plus lent pour assurer la synchro serveur
         end
 
-        task.delay(0.3, function()
+        -- Success Verification: On regarde si un objet est ajouté au personnage
+        local character = LocalPlayer.Character
+        local itemsAvant = {}
+        if character then
+            for _, c in pairs(character:GetChildren()) do itemsAvant[c] = true end
+        end
+
+        if fireproximityprompt then
+            print("[MohaHub] Tentative de grab sur : " .. nomCible)
+            fireproximityprompt(bestPrompt)
+            
+            -- Attendre la réponse du serveur (0.3s au lieu de 0.2s)
+            task.wait(0.3)
+            
+            if character then
+                for _, c in pairs(character:GetChildren()) do
+                    if not itemsAvant[c] and (c:IsA("Model") or c:IsA("Tool") or c:IsA("Accessory")) then
+                        print("[MohaHub] Objet détecté dans l'inventaire : " .. c.Name)
+                        ok = true
+                        break
+                    end
+                end
+            else
+                ok = true
+            end
+        end
+
+        -- Retour position originale immédiat
+        root.CFrame = originalCFrame
+
+        task.delay(0.2, function()
             pcall(function()
                 bestPrompt.HoldDuration = oH
                 bestPrompt.MaxActivationDistance = oM
@@ -1008,26 +1051,21 @@ local function ExecuterAutoGrab()
         end)
     end)
 
-    -- Fallback: chercher tous les prompts proches
-    if not ok then
-        for _, desc in pairs(DossierPlots:GetDescendants()) do
-            if desc:IsA("ProximityPrompt") then
-                pcall(function()
-                    desc.HoldDuration = 0
-                    desc.MaxActivationDistance = 9999
-                    desc.RequiresLineOfSight = false
-                    if fireproximityprompt then
-                        fireproximityprompt(desc)
-                        ok = true
-                    end
-                end)
-                if ok then break end
+    -- Fallback simple si détection manquée
+    if not ok and fireproximityprompt then
+        print("[MohaHub] Vérification manuelle de l'objet porté...")
+        local character = LocalPlayer.Character
+        if character then
+            for _, c in pairs(character:GetChildren()) do
+                if MohaHub.Heros[c.Name] then ok = true; break end
             end
         end
     end
 
     GrabStatusLabel.Text = ok and "✅ Vol terminé !" or "❌ Échec du vol"
     GrabStatusLabel.TextColor3 = ok and COLORS.green or COLORS.red
+    if ok then print("[MohaHub] Vol RÉUSSI !") else print("[MohaHub] Vol ÉCHOUÉ") end
+    
     task.wait(0.5)
     enCoursDeGrab = false
 end
@@ -1383,6 +1421,28 @@ baseEspFolder.Name = "MohaBaseESP"
 baseEspFolder.Parent = CoreGui
 
 local baseEspObjects = {}
+
+-- Scrape timers from game's native Billboards (Plot.Purchases or Plot.AnimalPodiums)
+local function ScrapeTimerFromUI(plot)
+    local timers = {}
+    for _, desc in pairs(plot:GetDescendants()) do
+        if desc:IsA("BillboardGui") and desc.Enabled then
+            local lbl = desc:FindFirstChild("RemainingTime") or desc:FindFirstChild("Timer") or desc:FindFirstChild("Countdown")
+            if lbl and (lbl:IsA("TextLabel") or lbl:IsA("TextButton")) and lbl.Visible then
+                local txt = lbl.Text:gsub("<[^>]+>", "") -- Remove RichText tags
+                if txt ~= "" and (txt:find(":") or txt:find("s") or txt:find("READY")) then
+                    table.insert(timers, txt)
+                end
+            end
+        end
+    end
+    -- Pick the most relevant timer (usually the longest or formatted x:xx)
+    if #timers > 0 then
+        table.sort(timers, function(a, b) return (#a > #b) end) -- Prioritize long formatted strings
+        return timers[1]
+    end
+    return nil
+end
 
 local function CreateBaseESP(plot)
     if baseEspObjects[plot] then return end
