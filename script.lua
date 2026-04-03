@@ -38,16 +38,40 @@ local DossierModeles = ReplicatedStorage:WaitForChild("Models", 5)
 local DossierAnimaux = DossierModeles and DossierModeles:WaitForChild("Animals", 5)
 local DossierPlots = Workspace:WaitForChild("Plots", 5)
 
+-- FIX: Le jeu utilise Net:RemoteEvent("StealService/Grab")
+-- La librairie Net crée les remotes avec des conventions spécifiques
 local RemoteGrab = nil
 do
-    local ss = ReplicatedStorage:FindFirstChild("StealService", true)
-    if ss then RemoteGrab = ss:FindFirstChild("Grab") end
-    if not RemoteGrab then RemoteGrab = ReplicatedStorage:FindFirstChild("Grab", true) end
+    -- Méthode 1: Chercher le dossier StealService > Grab (structure dossier Net)
+    local stealFolder = ReplicatedStorage:FindFirstChild("StealService", true)
+    if stealFolder and stealFolder:IsA("Folder") then
+        RemoteGrab = stealFolder:FindFirstChild("Grab")
+    end
+    -- Méthode 2: Le Net library met parfois les remotes dans un dossier "Net" ou "Remotes"
+    if not RemoteGrab then
+        for _, folder in pairs(ReplicatedStorage:GetDescendants()) do
+            if folder:IsA("Folder") and (folder.Name == "Net" or folder.Name == "Remotes" or folder.Name == "Events") then
+                local grab = folder:FindFirstChild("StealService/Grab") or folder:FindFirstChild("Grab")
+                if grab then RemoteGrab = grab; break end
+            end
+        end
+    end
+    -- Méthode 3: Chercher un remote nommé exactement "StealService/Grab" (Net library naming)
     if not RemoteGrab then
         for _, d in pairs(ReplicatedStorage:GetDescendants()) do
-            if (d:IsA("RemoteEvent") or d:IsA("RemoteFunction")) then
+            if d:IsA("RemoteEvent") and d.Name == "StealService/Grab" then
+                RemoteGrab = d; break
+            end
+        end
+    end
+    -- Méthode 4: Chercher récursivement "Grab" comme RemoteEvent
+    if not RemoteGrab then
+        for _, d in pairs(ReplicatedStorage:GetDescendants()) do
+            if d:IsA("RemoteEvent") then
                 local n = d.Name:lower()
-                if n:find("grab") or n:find("steal") then RemoteGrab = d; break end
+                if n == "grab" or n:find("steal.*grab") or n:find("grab") then
+                    RemoteGrab = d; break
+                end
             end
         end
     end
@@ -732,19 +756,80 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
--- ====================== AUTO GRAB ENGINE ======================
-local function ObtenirValeurDansPlot(plot)
-    local vMax, nom = -1, "Inconnu"
-    for _, e in pairs(plot:GetDescendants()) do
-        local hd = MohaHub.Heros[e.Name]
-        if hd and hd.ValeurNum and hd.ValeurNum > vMax then vMax = hd.ValeurNum; nom = e.Name end
+-- ====================== AUTO GRAB ENGINE (FIXED) ======================
+-- FIX: Trouver les brainrots VISIBLES sur un plot (pas les templates)
+-- Les brainrots sont des Models enfants du plot qui matchent les noms scannés
+local function TrouverBrainrotsVisibles(plot)
+    local brainrots = {}
+    for _, child in pairs(plot:GetDescendants()) do
+        if child:IsA("Model") and MohaHub.Heros[child.Name] then
+            -- Vérifier que le model a des parties visibles (pas invisible)
+            local hasVisiblePart = false
+            local primaryPart = child.PrimaryPart or child:FindFirstChildWhichIsA("BasePart")
+            if primaryPart then
+                for _, p in pairs(child:GetDescendants()) do
+                    if p:IsA("BasePart") and p.Transparency < 0.9 then
+                        hasVisiblePart = true
+                        break
+                    end
+                end
+            end
+            if hasVisiblePart then
+                table.insert(brainrots, child)
+            end
+        end
     end
-    return vMax, nom
+    return brainrots
 end
 
-local function ObtenirPlotIndex(plot)
-    local idx = tonumber(plot.Name:match("%d+"))
-    return idx or plot.Name
+local function ObtenirMeilleurBrainrot(plot, mode, rootPos)
+    local brainrots = TrouverBrainrotsVisibles(plot)
+    local best = nil
+    local bestVal = -1
+    local bestDist = math.huge
+    local bestName = "Inconnu"
+
+    for _, brainrot in pairs(brainrots) do
+        local hd = MohaHub.Heros[brainrot.Name]
+        if hd then
+            local part = brainrot.PrimaryPart or brainrot:FindFirstChildWhichIsA("BasePart")
+            local dist = part and (rootPos - part.Position).Magnitude or math.huge
+
+            if mode == "Highest" then
+                if hd.ValeurNum and hd.ValeurNum > bestVal then
+                    bestVal = hd.ValeurNum
+                    best = brainrot
+                    bestName = brainrot.Name
+                end
+            elseif mode == "Nearest" then
+                if dist < bestDist then
+                    bestDist = dist
+                    best = brainrot
+                    bestName = brainrot.Name
+                end
+            end
+        end
+    end
+    return best, bestName, bestVal
+end
+
+-- FIX: Lire le prix depuis le overhead BillboardGui du brainrot sur le plot
+local function LirePrixOverhead(model)
+    for _, desc in pairs(model:GetDescendants()) do
+        if desc:IsA("BillboardGui") then
+            local priceLabel = desc:FindFirstChild("Price") or desc:FindFirstChild("prix")
+            if priceLabel and priceLabel:IsA("TextLabel") then
+                return priceLabel.Text
+            end
+            -- Chercher dans tous les TextLabels
+            for _, lbl in pairs(desc:GetDescendants()) do
+                if lbl:IsA("TextLabel") and lbl.Name:lower():find("price") then
+                    return lbl.Text
+                end
+            end
+        end
+    end
+    return nil
 end
 
 local enCoursDeGrab = false
@@ -760,20 +845,44 @@ local function ExecuterAutoGrab()
     local cibleHitbox, nomCible, plotCible = nil, "Cible", nil
     local minDist, maxVal = range, -1
 
+    -- FIX: Les plots ont des noms UUID (ex: 09f8f260-f988-...)
+    -- Chaque plot contient un StealHitbox et des Models d'animaux
     for _, plot in pairs(DossierPlots:GetChildren()) do
+        -- Ignorer son propre plot
         local owner = plot:FindFirstChild("Owner") or plot:FindFirstChild("PlotOwner")
-        if owner and owner:IsA("ObjectValue") and owner.Value == LocalPlayer then continue end
-        if owner and owner:IsA("StringValue") and owner.Value == LocalPlayer.Name then continue end
+        if owner then
+            if owner:IsA("ObjectValue") and owner.Value == LocalPlayer then continue end
+            if owner:IsA("StringValue") and owner.Value == LocalPlayer.Name then continue end
+        end
 
-        local hitbox = plot:FindFirstChild("StealHitbox", true)
-        if hitbox and hitbox:IsA("BasePart") then
+        -- Chercher StealHitbox (peut être dans des sous-dossiers comme FirstFloor, SecondFloor...)
+        -- Les bases ont: FirstFloor/StealHitbox, SecondFloor/StealHitbox, ThirdFloor/StealHitbox
+        local hitboxes = {}
+        for _, desc in pairs(plot:GetDescendants()) do
+            if desc.Name == "StealHitbox" and desc:IsA("BasePart") then
+                table.insert(hitboxes, desc)
+            end
+        end
+
+        for _, hitbox in pairs(hitboxes) do
             local dist = (root.Position - hitbox.Position).Magnitude
             if dist <= range then
                 if mode == "Nearest" then
-                    if dist < minDist then minDist = dist; cibleHitbox = hitbox; plotCible = plot; _, nomCible = ObtenirValeurDansPlot(plot) end
+                    if dist < minDist then
+                        minDist = dist
+                        cibleHitbox = hitbox
+                        plotCible = plot
+                        local _, name = ObtenirMeilleurBrainrot(plot, mode, root.Position)
+                        nomCible = name
+                    end
                 elseif mode == "Highest" then
-                    local prix, nom = ObtenirValeurDansPlot(plot)
-                    if prix > maxVal then maxVal = prix; cibleHitbox = hitbox; plotCible = plot; nomCible = nom end
+                    local _, nom, prix = ObtenirMeilleurBrainrot(plot, mode, root.Position)
+                    if prix > maxVal then
+                        maxVal = prix
+                        cibleHitbox = hitbox
+                        plotCible = plot
+                        nomCible = nom
+                    end
                 end
             end
         end
@@ -793,7 +902,7 @@ local function ExecuterAutoGrab()
     local tween = TweenService:Create(GrabProgressFill, TweenInfo.new(temps, Enum.EasingStyle.Linear), {Size = UDim2.new(1, 0, 1, 0)})
     tween:Play()
 
-    -- Update time label during animation
+    -- Update time label
     local conn
     conn = RunService.RenderStepped:Connect(function()
         local elapsed = tick() - startTime
@@ -808,52 +917,82 @@ local function ExecuterAutoGrab()
     tween.Completed:Wait()
     if conn.Connected then conn:Disconnect() end
 
-    -- Multi-méthode steal
+    -- =====================================================
+    -- MULTI-MÉTHODE STEAL (adapté au vrai protocole serveur)
+    -- Le serveur attend: RemoteGrab:FireServer("Grab", podiumIndex)
+    -- podiumIndex = numéro du podium (1, 2, 3, etc.)
+    -- Le serveur utilise _G.playerPlots[userId] pour trouver le plot
+    -- => le joueur DOIT être physiquement près du StealHitbox
+    -- =====================================================
     local ok = false
 
-    -- M1: ProximityPrompt
+    -- MÉTHODE 1: ProximityPrompt (le plus fiable - simule l'interaction du jeu)
     if not ok then
-        local prompt = plotCible:FindFirstChildWhichIsA("ProximityPrompt", true)
-        if prompt then
+        -- Chercher TOUS les ProximityPrompts dans le plot cible
+        local prompts = {}
+        for _, desc in pairs(plotCible:GetDescendants()) do
+            if desc:IsA("ProximityPrompt") then
+                table.insert(prompts, desc)
+            end
+        end
+        for _, prompt in pairs(prompts) do
             pcall(function()
-                local oH, oM, oE, oR = prompt.HoldDuration, prompt.MaxActivationDistance, prompt.Enabled, prompt.RequiresLineOfSight
-                prompt.HoldDuration = 0; prompt.MaxActivationDistance = 9999; prompt.Enabled = true; prompt.RequiresLineOfSight = false
-                if fireproximityprompt then fireproximityprompt(prompt); ok = true end
-                task.delay(0.2, function() pcall(function() prompt.HoldDuration = oH; prompt.MaxActivationDistance = oM; prompt.Enabled = oE; prompt.RequiresLineOfSight = oR end) end)
+                local oH = prompt.HoldDuration
+                local oM = prompt.MaxActivationDistance
+                local oE = prompt.Enabled
+                local oR = prompt.RequiresLineOfSight
+                prompt.HoldDuration = 0
+                prompt.MaxActivationDistance = 9999
+                prompt.Enabled = true
+                prompt.RequiresLineOfSight = false
+                if fireproximityprompt then
+                    fireproximityprompt(prompt)
+                    ok = true
+                end
+                task.delay(0.2, function()
+                    pcall(function()
+                        prompt.HoldDuration = oH
+                        prompt.MaxActivationDistance = oM
+                        prompt.Enabled = oE
+                        prompt.RequiresLineOfSight = oR
+                    end)
+                end)
             end)
+            if ok then break end
         end
     end
 
-    -- M2: Remote
+    -- MÉTHODE 2: Remote "Grab" avec podiumIndex (protocole serveur réel)
+    -- Le serveur attend: FireServer("Grab", podiumIndex) - PAS le nom du plot!
     if not ok and RemoteGrab then
-        local pi = ObtenirPlotIndex(plotCible)
         pcall(function()
-            if RemoteGrab:IsA("RemoteEvent") then
-                RemoteGrab:FireServer("Grab", pi); RemoteGrab:FireServer("Steal", pi); RemoteGrab:FireServer(pi); ok = true
-            elseif RemoteGrab:IsA("RemoteFunction") then
-                RemoteGrab:InvokeServer("Grab", pi); ok = true
+            -- Essayer les podium indices 1 à 20 (couvre FirstFloor, SecondFloor, ThirdFloor)
+            for podiumIdx = 1, 20 do
+                pcall(function()
+                    RemoteGrab:FireServer("Grab", podiumIdx)
+                end)
+                task.wait(0.05)
             end
+            ok = true
         end)
     end
 
-    -- M3: ClickDetector
+    -- MÉTHODE 3: ClickDetector
     if not ok then
         local cd = plotCible:FindFirstChildWhichIsA("ClickDetector", true)
-        if cd and fireclickdetector then pcall(function() fireclickdetector(cd); ok = true end) end
-    end
-
-    -- M4: Plot Remotes
-    if not ok then
-        for _, d in pairs(plotCible:GetDescendants()) do
-            if d:IsA("RemoteEvent") then pcall(function() d:FireServer(); ok = true end); if ok then break end end
+        if cd and fireclickdetector then
+            pcall(function() fireclickdetector(cd); ok = true end)
         end
     end
 
-    -- M5: Bring Hitbox
+    -- MÉTHODE 4: Remotes dans le plot
     if not ok then
-        pcall(function()
-            local orig = cibleHitbox.CFrame; cibleHitbox.CFrame = root.CFrame; task.wait(0.15); cibleHitbox.CFrame = orig
-        end)
+        for _, d in pairs(plotCible:GetDescendants()) do
+            if d:IsA("RemoteEvent") then
+                pcall(function() d:FireServer(); ok = true end)
+                if ok then break end
+            end
+        end
     end
 
     GrabBarGui.Enabled = false
@@ -887,7 +1026,9 @@ task.spawn(function()
     end
 end)
 
--- ====================== BRAINROT ESP ======================
+-- ====================== BRAINROT ESP (FIXED) ======================
+-- FIX: Ne scanner QUE les brainrots VISIBLES dans workspace.Plots
+-- NE PAS scanner ReplicatedStorage (ce sont des templates invisibles)
 local espFolder = Instance.new("Folder")
 espFolder.Name = "MohaESP"
 espFolder.Parent = CoreGui
@@ -895,129 +1036,239 @@ espFolder.Parent = CoreGui
 local espObjects = {}
 
 local RARITY_COLORS = {
-    Legendary = Color3.fromRGB(255, 170, 0),
+    Legendary = Color3.fromRGB(255, 200, 0),
     Epic = Color3.fromRGB(180, 60, 255),
     Rare = Color3.fromRGB(0, 170, 255),
     Uncommon = Color3.fromRGB(80, 220, 120),
     Common = Color3.fromRGB(180, 180, 180),
     Normal = Color3.fromRGB(180, 180, 180),
+    Mythic = Color3.fromRGB(255, 50, 100),
+    Secret = Color3.fromRGB(255, 100, 255),
 }
 
-local function CreateESPForPart(part, brainrotName, rarete, prix)
-    if espObjects[part] then return end
+-- FIX: Vérifier qu'un model est un vrai brainrot VISIBLE (pas un template)
+local function EstBrainrotVisible(model)
+    if not model:IsA("Model") then return false end
+    -- Doit avoir au moins une partie visible
+    local hasVisible = false
+    for _, part in pairs(model:GetDescendants()) do
+        if part:IsA("BasePart") and part.Transparency < 0.9 then
+            hasVisible = true
+            break
+        end
+    end
+    if not hasVisible then return false end
+    -- Doit être dans workspace (pas dans ReplicatedStorage)
+    local current = model.Parent
+    while current do
+        if current == ReplicatedStorage then return false end
+        if current == Workspace then return true end
+        current = current.Parent
+    end
+    return false
+end
+
+-- FIX: Lire le prix depuis le BillboardGui overhead du brainrot
+local function LirePrixDepuisOverhead(model)
+    for _, desc in pairs(model:GetDescendants()) do
+        if desc:IsA("BillboardGui") then
+            -- Chercher le label Price
+            local priceLbl = desc:FindFirstChild("Price")
+            if priceLbl and (priceLbl:IsA("TextLabel") or priceLbl:IsA("TextButton")) then
+                local txt = priceLbl.Text or ""
+                if txt ~= "" then return txt end
+            end
+            -- Chercher dans tous les enfants
+            for _, child in pairs(desc:GetDescendants()) do
+                if (child:IsA("TextLabel") or child:IsA("TextButton")) then
+                    local n = child.Name:lower()
+                    if n:find("price") or n:find("prix") or n:find("value") or n:find("generation") or n:find("gen") then
+                        local txt = child.Text or ""
+                        if txt ~= "" and txt ~= "0" then return txt end
+                    end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+-- FIX: Lire la rareté depuis le BillboardGui overhead
+local function LireRareteDepuisOverhead(model)
+    for _, desc in pairs(model:GetDescendants()) do
+        if desc:IsA("BillboardGui") then
+            local rarLbl = desc:FindFirstChild("Rarity")
+            if rarLbl and (rarLbl:IsA("TextLabel") or rarLbl:IsA("TextButton")) then
+                local txt = rarLbl.Text or ""
+                if txt ~= "" then return txt end
+            end
+        end
+    end
+    return nil
+end
+
+local function CreateESPForModel(model)
+    -- Trouver la partie principale pour attacher le billboard
+    local part = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
+    if not part then return end
+    if espObjects[model] then return end
+
+    local brainrotName = model.Name
+    local heroData = MohaHub.Heros[brainrotName]
+
+    -- Lire prix et rareté depuis overhead OU depuis nos données scannées
+    local prix = LirePrixDepuisOverhead(model)
+    if not prix and heroData then prix = heroData.Prix end
+    prix = prix or "?"
+
+    local rarete = LireRareteDepuisOverhead(model)
+    if not rarete and heroData then rarete = heroData.Rarete end
+    rarete = rarete or "Normal"
+
+    -- Trouver le propriétaire du plot pour l'afficher
+    local plotOwnerName = "?"
+    local parent = model.Parent
+    while parent and parent ~= Workspace do
+        local ownerVal = parent:FindFirstChild("Owner") or parent:FindFirstChild("PlotOwner")
+        if ownerVal then
+            if ownerVal:IsA("ObjectValue") and ownerVal.Value and ownerVal.Value:IsA("Player") then
+                plotOwnerName = ownerVal.Value.Name
+            elseif ownerVal:IsA("StringValue") then
+                plotOwnerName = ownerVal.Value
+            end
+            break
+        end
+        parent = parent.Parent
+    end
+
+    local rarColor = RARITY_COLORS[rarete] or COLORS.espColor
 
     local bb = Instance.new("BillboardGui")
-    bb.Name = "BrainrotESP_"..brainrotName
+    bb.Name = "BrainrotESP"
     bb.Adornee = part
-    bb.Size = UDim2.new(0, 180, 0, 55)
-    bb.StudsOffset = Vector3.new(0, 3, 0)
+    bb.Size = UDim2.new(0, 200, 0, 68)
+    bb.StudsOffset = Vector3.new(0, 4, 0)
     bb.AlwaysOnTop = true
     bb.Parent = espFolder
 
     local bg = Instance.new("Frame")
     bg.Size = UDim2.new(1, 0, 1, 0)
-    bg.BackgroundColor3 = Color3.fromRGB(15, 12, 25)
-    bg.BackgroundTransparency = 0.25
+    bg.BackgroundColor3 = Color3.fromRGB(10, 8, 20)
+    bg.BackgroundTransparency = 0.15
     bg.BorderSizePixel = 0
     bg.Parent = bb
     Instance.new("UICorner", bg).CornerRadius = UDim.new(0, 8)
 
     local stroke = Instance.new("UIStroke")
     stroke.Parent = bg
-    stroke.Color = RARITY_COLORS[rarete] or COLORS.espColor
-    stroke.Thickness = 1.5
-    stroke.Transparency = 0.3
+    stroke.Color = rarColor
+    stroke.Thickness = 2
+    stroke.Transparency = 0.2
 
+    -- Nom du brainrot
     local nameL = Instance.new("TextLabel")
-    nameL.Size = UDim2.new(1, -10, 0, 20)
+    nameL.Size = UDim2.new(1, -10, 0, 18)
     nameL.Position = UDim2.new(0, 5, 0, 3)
     nameL.BackgroundTransparency = 1
     nameL.Text = "🧠 "..brainrotName
-    nameL.TextColor3 = RARITY_COLORS[rarete] or COLORS.espColor
+    nameL.TextColor3 = rarColor
     nameL.Font = Enum.Font.GothamBold
-    nameL.TextSize = 12
+    nameL.TextSize = 13
     nameL.TextScaled = true
     nameL.Parent = bg
 
+    -- Rareté + Prix
     local infoL = Instance.new("TextLabel")
-    infoL.Size = UDim2.new(1, -10, 0, 16)
-    infoL.Position = UDim2.new(0, 5, 0, 24)
+    infoL.Size = UDim2.new(1, -10, 0, 14)
+    infoL.Position = UDim2.new(0, 5, 0, 22)
     infoL.BackgroundTransparency = 1
-    infoL.Text = rarete.." | 💰"..prix
+    infoL.Text = rarete.." | 💰 "..tostring(prix)
     infoL.TextColor3 = COLORS.textSecondary
     infoL.Font = Enum.Font.GothamSemibold
-    infoL.TextSize = 10
+    infoL.TextSize = 11
     infoL.TextScaled = true
     infoL.Parent = bg
 
+    -- Propriétaire
+    local ownerL = Instance.new("TextLabel")
+    ownerL.Size = UDim2.new(1, -10, 0, 12)
+    ownerL.Position = UDim2.new(0, 5, 0, 37)
+    ownerL.BackgroundTransparency = 1
+    ownerL.Text = "👤 "..plotOwnerName
+    ownerL.TextColor3 = Color3.fromRGB(200, 180, 255)
+    ownerL.Font = Enum.Font.Gotham
+    ownerL.TextSize = 10
+    ownerL.TextScaled = true
+    ownerL.Parent = bg
+
+    -- Distance
     local distL = Instance.new("TextLabel")
     distL.Size = UDim2.new(1, -10, 0, 12)
-    distL.Position = UDim2.new(0, 5, 0, 40)
+    distL.Position = UDim2.new(0, 5, 0, 52)
     distL.BackgroundTransparency = 1
     distL.Text = "..."
     distL.TextColor3 = COLORS.accent3
     distL.Font = Enum.Font.Gotham
-    distL.TextSize = 9
+    distL.TextSize = 10
     distL.Parent = bg
 
-    espObjects[part] = {billboard = bb, distLabel = distL}
+    espObjects[model] = {billboard = bb, distLabel = distL, part = part}
 end
 
 local function ClearESP()
-    for part, data in pairs(espObjects) do
+    for _, data in pairs(espObjects) do
         if data.billboard then data.billboard:Destroy() end
     end
     espObjects = {}
 end
 
--- ESP update loop
+-- ESP update loop - FIX: UNIQUEMENT les brainrots dans workspace.Plots
 task.spawn(function()
     while true do
         if MohaHub.Parametres.BrainrotESP then
-            -- Scan workspace plots for brainrots
+            -- Scanner UNIQUEMENT workspace.Plots pour les brainrots visibles
             if DossierPlots then
                 for _, plot in pairs(DossierPlots:GetChildren()) do
                     for _, desc in pairs(plot:GetDescendants()) do
-                        local heroData = MohaHub.Heros[desc.Name]
-                        if heroData and desc:IsA("BasePart") or (desc:IsA("Model") and desc:FindFirstChild("HumanoidRootPart")) then
-                            local part = desc
-                            if desc:IsA("Model") then part = desc:FindFirstChild("HumanoidRootPart") or desc:FindFirstChildWhichIsA("BasePart") end
-                            if part and part:IsA("BasePart") and heroData then
-                                CreateESPForPart(part, desc.Name, heroData.Rarete or "Normal", heroData.Prix or "?")
+                        -- Matcher le nom contre notre base de données scannée
+                        if desc:IsA("Model") and MohaHub.Heros[desc.Name] then
+                            if EstBrainrotVisible(desc) then
+                                CreateESPForModel(desc)
                             end
                         end
                     end
                 end
             end
 
-            -- Also scan workspace directly for brainrot models
-            for _, child in pairs(Workspace:GetDescendants()) do
-                local heroData = MohaHub.Heros[child.Name]
-                if heroData and (child:IsA("Model") or child:IsA("BasePart")) then
-                    local part = child
-                    if child:IsA("Model") then part = child:FindFirstChild("HumanoidRootPart") or child:FindFirstChildWhichIsA("BasePart") end
-                    if part and part:IsA("BasePart") then
-                        CreateESPForPart(part, child.Name, heroData.Rarete or "Normal", heroData.Prix or "?")
+            -- Aussi scanner les brainrots portés par les joueurs (en cours de vol)
+            for _, player in pairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer and player.Character then
+                    for _, desc in pairs(player.Character:GetDescendants()) do
+                        if desc:IsA("Model") and MohaHub.Heros[desc.Name] then
+                            if EstBrainrotVisible(desc) then
+                                CreateESPForModel(desc)
+                            end
+                        end
                     end
                 end
             end
 
-            -- Update distances & cleanup
+            -- Update distances & cleanup des ESP invalides
             local char = LocalPlayer.Character
             local root = char and char:FindFirstChild("HumanoidRootPart")
-            for part, data in pairs(espObjects) do
-                if not part.Parent then
+            for model, data in pairs(espObjects) do
+                if not model.Parent or not data.part or not data.part.Parent then
                     data.billboard:Destroy()
-                    espObjects[part] = nil
-                elseif root then
-                    local dist = math.floor((root.Position - part.Position).Magnitude)
+                    espObjects[model] = nil
+                elseif root and data.part then
+                    local dist = math.floor((root.Position - data.part.Position).Magnitude)
                     data.distLabel.Text = "📍 "..dist.." studs"
                 end
             end
         else
             ClearESP()
         end
-        task.wait(1)
+        task.wait(1.5)
     end
 end)
 
