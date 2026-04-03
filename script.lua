@@ -92,13 +92,21 @@ end
 
 function MohaHub:EstProtege(plot)
     if not plot then return false end
-    -- Check uniquement les Attributs du plot (pas de scan récursif = pas de faux positifs)
+    -- Check Attributs
     if plot:GetAttribute("ShieldActive") == true then return true end
     if plot:GetAttribute("Locked") == true then return true end
-    if plot:GetAttribute("Private") == true then return true end
     if plot:GetAttribute("StealProtected") == true then return true end
-    -- Check ForceField direct (pas récursif)
+    -- Check ForceField
     if plot:FindFirstChildOfClass("ForceField") then return true end
+    -- Check Laser (mécanisme de protection du jeu "Steal A Brainrot")
+    local laserFolder = plot:FindFirstChild("Laser")
+    if laserFolder then
+        for _, part in pairs(laserFolder:GetDescendants()) do
+            if part:IsA("BasePart") and part.Transparency < 0.5 then
+                return true -- Les lasers sont visibles = base protégée
+            end
+        end
+    end
     return false
 end
 
@@ -938,12 +946,33 @@ local function TrouverTousPrompts(plot)
     return prompts
 end
 
-local function VerifierProtectionPlot(plot)
+local function _VerifierProtectionPlot(plot)
     return MohaHub:EstProtege(plot)
+end
+
+local function JoueurTientBrainrot()
+    local char = LocalPlayer.Character
+    if not char then return false end
+    for _, c in pairs(char:GetChildren()) do
+        if c:IsA("Model") and MohaHub.Heros[c.Name] then return true end
+        if c:IsA("Tool") and MohaHub.Heros[c.Name] then return true end
+    end
+    return false
 end
 
 local function ExecuterAutoGrab()
     if enCoursDeGrab then return end
+
+    -- Si on tient déjà un brainrot, on arrête
+    if JoueurTientBrainrot() then
+        GrabStatusLabel.Text = "🧠 Brainrot en main !"
+        GrabStatusLabel.TextColor3 = COLORS.green
+        GrabProgressFill.Size = UDim2.new(1, 0, 1, 0)
+        GrabBarGlow.BackgroundColor3 = COLORS.green
+        GrabBarGui.Enabled = true
+        return
+    end
+
     local char = LocalPlayer.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if not root or not DossierPlots then return end
@@ -952,12 +981,9 @@ local function ExecuterAutoGrab()
 
     local mode = MohaHub.Parametres.GrabMode
     local range = MohaHub.Parametres.GrabRange
-    local bestPrompt, bestCFrame, nomCible, bestDist, bestVal = nil, nil, "Cible", math.huge, -1
+    local bestPrompt, nomCible, bestDist, bestVal = nil, "Cible", math.huge, -1
 
-    local allPlots = DossierPlots:GetChildren()
-    local totalPrompts = 0
-
-    for _, plot in pairs(allPlots) do
+    for _, plot in pairs(DossierPlots:GetChildren()) do
         -- Skip notre propre plot
         local owner = plot:FindFirstChild("Owner") or plot:FindFirstChild("PlotOwner")
         local isMine = false
@@ -967,44 +993,38 @@ local function ExecuterAutoGrab()
         end
         if isMine then continue end
 
-        -- Trouver TOUS les prompts dans ce plot
-        local prompts = TrouverTousPrompts(plot)
-        totalPrompts = totalPrompts + #prompts
+        -- Vérifier la distance avec le StealHitbox du plot
+        local stealHitbox = plot:FindFirstChild("StealHitbox")
+        local plotCenter = stealHitbox or plot:FindFirstChild("MainRoot") or plot:FindFirstChildWhichIsA("BasePart")
+        if not plotCenter then continue end
 
-        for _, prompt in pairs(prompts) do
-            -- Trouver la partie la plus proche du prompt pour le teleport
-            local promptParent = prompt.Parent
-            local targetPart = nil
+        local plotDist = (root.Position - plotCenter.Position).Magnitude
+        if plotDist > range * 3 then continue end -- Skip les plots trop loin (optimisation)
 
-            -- Méthode 1: Le prompt est directement dans un BasePart
-            if promptParent and promptParent:IsA("BasePart") then
-                targetPart = promptParent
-            end
+        -- Chercher les prompts UNIQUEMENT dans AnimalPodiums
+        local animalPodiums = plot:FindFirstChild("AnimalPodiums")
+        if not animalPodiums then continue end
 
-            -- Méthode 2: Le prompt est dans un Model, chercher Holder ou PrimaryPart
-            if not targetPart then
-                local parentModel = prompt:FindFirstAncestorWhichIsA("Model")
-                if parentModel then
-                    targetPart = parentModel:FindFirstChild("Holder")
-                        or parentModel.PrimaryPart
-                        or parentModel:FindFirstChildWhichIsA("BasePart")
-                end
-            end
+        for _, podium in pairs(animalPodiums:GetChildren()) do
+            for _, desc in pairs(podium:GetDescendants()) do
+                if desc:IsA("ProximityPrompt") then
+                    -- Ignorer les prompts non-steal
+                    local at = desc.ActionText:lower()
+                    if at == "unlock base" or at == "toggle" then continue end
 
-            -- Méthode 3: Fallback - utiliser n'importe quel BasePart parent
-            if not targetPart and promptParent then
-                targetPart = promptParent:FindFirstChildWhichIsA("BasePart")
-            end
+                    -- Calculer la distance avec le Spawn du podium
+                    local spawnPart = podium:FindFirstChild("Base") and podium.Base:FindFirstChild("Spawn")
+                    local distPart = spawnPart or podium:FindFirstChildWhichIsA("BasePart")
+                    if not distPart then continue end
 
-            if targetPart then
-                local dist = (root.Position - targetPart.Position).Magnitude
-                if dist <= range then
-                    -- Trouver le nom du brainrot
+                    local dist = (root.Position - distPart.Position).Magnitude
+                    if dist > range then continue end
+
+                    -- Trouver le brainrot sur ce podium
                     local brainrotName = "Brainrot"
-                    -- Chercher un Model connu dans le plot
-                    for _, desc in pairs(plot:GetDescendants()) do
-                        if desc:IsA("Model") and MohaHub.Heros[desc.Name] then
-                            brainrotName = desc.Name
+                    for _, child in pairs(podium:GetDescendants()) do
+                        if child:IsA("Model") and MohaHub.Heros[child.Name] then
+                            brainrotName = child.Name
                             break
                         end
                     end
@@ -1014,13 +1034,11 @@ local function ExecuterAutoGrab()
 
                     if mode == "Nearest" and dist < bestDist then
                         bestDist = dist
-                        bestPrompt = prompt
-                        bestCFrame = targetPart.CFrame
+                        bestPrompt = desc
                         nomCible = brainrotName
                     elseif mode == "Highest" and val > bestVal then
                         bestVal = val
-                        bestPrompt = prompt
-                        bestCFrame = targetPart.CFrame
+                        bestPrompt = desc
                         nomCible = brainrotName
                         bestDist = dist
                     end
@@ -1028,8 +1046,6 @@ local function ExecuterAutoGrab()
             end
         end
     end
-
-    print("[MohaHub] Scan: " .. #allPlots .. " plots, " .. totalPrompts .. " prompts trouvés")
 
     -- Si pas de cible
     if not bestPrompt then
@@ -1048,7 +1064,7 @@ local function ExecuterAutoGrab()
     GrabStatusLabel.TextColor3 = COLORS.accent2
     GrabProgressFill.Size = UDim2.new(0, 0, 1, 0)
     GrabBarGlow.BackgroundColor3 = COLORS.accent2
-    print("[MohaHub] Cible identifiée : " .. nomCible .. " à " .. math.floor(bestDist) .. "m")
+    print("[MohaHub] Cible: " .. nomCible .. " à " .. math.floor(bestDist) .. "m")
 
     local temps = MohaHub.Parametres.GrabDelay
     local startTime = tick()
@@ -1074,10 +1090,9 @@ local function ExecuterAutoGrab()
     GrabBarGlow.BackgroundColor3 = COLORS.green
 
     -- ============================================================
-    -- MÉTHODE SAFE: MICRO-TELEPORT + fireproximityprompt
+    -- MÉTHODE SAFE: fireproximityprompt SANS TELEPORT
     -- ============================================================
     local ok = false
-    local originalCFrame = root.CFrame
     pcall(function()
         local oH = bestPrompt.HoldDuration
         local oM = bestPrompt.MaxActivationDistance
@@ -1089,43 +1104,14 @@ local function ExecuterAutoGrab()
         bestPrompt.Enabled = true
         bestPrompt.RequiresLineOfSight = false
 
-        -- Micro-Teleport avec offset vertical pour éviter collision
-        if bestCFrame then
-            root.CFrame = bestCFrame + Vector3.new(0, 2, 0)
-            task.wait(0.08) -- Un peu plus lent pour assurer la synchro serveur
-        end
-
-        -- Success Verification: On regarde si un objet est ajouté au personnage
-        local character = LocalPlayer.Character
-        local itemsAvant = {}
-        if character then
-            for _, c in pairs(character:GetChildren()) do itemsAvant[c] = true end
-        end
-
         if fireproximityprompt then
-            print("[MohaHub] Tentative de grab sur : " .. nomCible)
+            print("[MohaHub] Grab: " .. nomCible)
             fireproximityprompt(bestPrompt)
-            
-            -- Attendre la réponse du serveur (0.3s au lieu de 0.2s)
             task.wait(0.3)
-            
-            if character then
-                for _, c in pairs(character:GetChildren()) do
-                    if not itemsAvant[c] and (c:IsA("Model") or c:IsA("Tool") or c:IsA("Accessory")) then
-                        print("[MohaHub] Objet détecté dans l'inventaire : " .. c.Name)
-                        ok = true
-                        break
-                    end
-                end
-            else
-                ok = true
-            end
+            ok = JoueurTientBrainrot()
         end
 
-        -- Retour position originale immédiat
-        root.CFrame = originalCFrame
-
-        task.delay(0.2, function()
+        task.delay(0.3, function()
             pcall(function()
                 bestPrompt.HoldDuration = oH
                 bestPrompt.MaxActivationDistance = oM
@@ -1135,20 +1121,9 @@ local function ExecuterAutoGrab()
         end)
     end)
 
-    -- Fallback simple si détection manquée
-    if not ok and fireproximityprompt then
-        print("[MohaHub] Vérification manuelle de l'objet porté...")
-        local character = LocalPlayer.Character
-        if character then
-            for _, c in pairs(character:GetChildren()) do
-                if MohaHub.Heros[c.Name] then ok = true; break end
-            end
-        end
-    end
-
     GrabStatusLabel.Text = ok and "✅ Vol terminé !" or "❌ Échec du vol"
     GrabStatusLabel.TextColor3 = ok and COLORS.green or COLORS.red
-    if ok then print("[MohaHub] Vol RÉUSSI !") else print("[MohaHub] Vol ÉCHOUÉ") end
+    if ok then print("[MohaHub] ✅ RÉUSSI !") else print("[MohaHub] ❌ ÉCHOUÉ") end
     
     task.wait(0.5)
     enCoursDeGrab = false
