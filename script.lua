@@ -1,7 +1,7 @@
 -- ==============================================================================
 -- █▀▄▀█ █▀█ █░█ ▄▀█   █░█ █░█ █▄▄
 -- █░▀░█ █▄█ █▀█ █▀█   █▀█ █▄█ █▄█
--- Version: 9.0 ULTIMATE (Custom GUI - Zero Dependencies)
+-- Version: 10.0 SUPERIOR (Redux Edition)
 -- Jeu: Steal A Brainrot
 -- ==============================================================================
 
@@ -13,15 +13,18 @@ local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
-local _Camera = Workspace.CurrentCamera
+local PathfindingService = game:GetService("PathfindingService")
+local HttpService = game:GetService("HttpService")
 
 local LocalPlayer = Players.LocalPlayer
+local _Camera = Workspace.CurrentCamera
 local HubParent = (gethui and gethui()) or CoreGui
 
 -- ====================== UTILITAIRES ======================
 local function ConvertirEnNombre(valeur)
+    if not valeur then return 0 end
     if type(valeur) == "number" then return valeur end
-    local texte = tostring(valeur):upper()
+    local texte = tostring(valeur):upper():gsub(",", ".")
     local nombre = tonumber(texte:match("[%d%.]+")) or 0
     if texte:match("B") then nombre = nombre * 1e9
     elseif texte:match("M") then nombre = nombre * 1e6
@@ -29,88 +32,48 @@ local function ConvertirEnNombre(valeur)
     return nombre
 end
 
-local function LerpColor(c1, c2, t)
-    return Color3.new(c1.R+(c2.R-c1.R)*t, c1.G+(c2.G-c1.G)*t, c1.B+(c2.B-c1.B)*t)
+local function ObtenirPositionPrompt(prompt)
+    if not prompt or not prompt.Parent then return nil end
+    local p = prompt.Parent
+    if p:IsA("BasePart") then return p.Position end
+    if p:IsA("Attachment") then return p.WorldPosition end
+    local current = p
+    while current and not current:IsA("BasePart") do current = current.Parent end
+    return current and current.Position or nil
 end
 
--- ====================== DONNÉES JEUX ======================
-local DossierModeles = ReplicatedStorage:WaitForChild("Models", 5)
-local DossierAnimaux = DossierModeles and DossierModeles:WaitForChild("Animals", 5)
-local DossierPlots = Workspace:WaitForChild("Plots", 5)
+local function EstVisible(position, ignorance)
+    local char = LocalPlayer.Character
+    local head = char and char:FindFirstChild("Head")
+    if not head then return false end
+    
+    local origin = head.Position
+    local direction = (position - origin)
+    local params = RaycastParams.new()
+    params.FilterDescendantsInstances = {char, ignorance or Workspace}
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    local result = Workspace:Raycast(origin, direction, params)
+    local isPhysicallyVisible = result == nil or (result.Position - position).Magnitude < 2.5
 
--- ====================== MODE SAFE (Anti-Ban) ======================
--- NE PAS toucher aux remotes UUID directement = BAN INSTANT
--- Le jeu valide les tokens avec SHA256 + timestamps serveur
--- SEULE méthode safe: fireproximityprompt (passe par le code légitime du jeu)
+    local _screenPoint, onScreen = _Camera:WorldToViewportPoint(position)
+    return isPhysicallyVisible and onScreen
+end
 
--- ====================== MOTEUR MOHA HUB ======================
-local MohaHub = {
-    Heros = {}, ListeNomsHeros = {},
+-- ====================== CONFIGURATION & DATABASE ======================
+local InternalSystem = {
+    Heros = {}, 
+    ListeNomsHeros = {},
     Parametres = {
         AutoGrab_Actif = false, GrabMode = "Highest", GrabDelay = 1.0,
-        GrabRange = 10, AfficherCercle = true, AutoRecall_Actif = false,
-        BrainrotESP = false, GrabBrainrots = true
+        GrabRange = 25, AfficherCercle = true, AutoRecall_Actif = false,
+        BrainrotESP = false, PlayerESP = false, BaseTimerESP = false,
+        GrabBrainrots = true, AutoWalk = false, DebugMode = false,
+        ServerHopStaff = false, AutoClicker = false, 
+        ThemeColor = Color3.fromRGB(130, 80, 255)
     }
 }
 
-function MohaHub:ExtraireProprio(plot)
-    if not plot then return nil end
-    local o = plot:FindFirstChild("Owner") or plot:FindFirstChild("PlotOwner") or plot:GetAttribute("Owner") or plot:GetAttribute("OwnerName")
-    if type(o) == "string" and o ~= "" and o ~= "Personne" then return o end
-    if typeof(o) == "Instance" then
-        if o:IsA("ObjectValue") and o.Value then 
-            local val = o.Value
-            return (val:IsA("Player") and val.DisplayName) or val.Name 
-        end
-        if o:IsA("StringValue") and o.Value ~= "" and o.Value ~= "Personne" then return o.Value end
-    end
-    -- Fallback: Chercher un StringValue ou ObjectValue enfant avec "Owner" dans le nom
-    for _, v in pairs(plot:GetChildren()) do
-        if v.Name:lower():find("owner") then
-            if v:IsA("StringValue") and v.Value ~= "" then return v.Value end
-            if v:IsA("ObjectValue") and v.Value then 
-                local val = v.Value
-                return (val:IsA("Player") and val.DisplayName) or val.Name
-            end
-        end
-    end
-    return nil
-end
-
-function MohaHub:EstVide(plot)
-    if not plot then return true end
-    -- Si on trouve un proprio, c'est pas vide
-    if self:ExtraireProprio(plot) then return false end
-    -- Si on trouve au moins un brainrot, c'est pas vide
-    for _, desc in pairs(plot:GetDescendants()) do
-        if desc:IsA("Model") and self.Heros[desc.Name] then return false end
-    end
-    -- Si on trouve un bouton de "Réclamation", c'est vide
-    if plot:FindFirstChild("Claim") or plot:FindFirstChild("ClaimPlot") then return true end
-    return true
-end
-
-function MohaHub:EstProtege(plot)
-    if not plot then return false end
-    -- Check Attributs
-    if plot:GetAttribute("ShieldActive") == true then return true end
-    if plot:GetAttribute("Locked") == true then return true end
-    if plot:GetAttribute("StealProtected") == true then return true end
-    -- Check ForceField
-    if plot:FindFirstChildOfClass("ForceField") then return true end
-    -- Check Laser (mécanisme de protection du jeu "Steal A Brainrot")
-    local laserFolder = plot:FindFirstChild("Laser")
-    if laserFolder then
-        for _, part in pairs(laserFolder:GetDescendants()) do
-            if part:IsA("BasePart") and part.Transparency < 0.5 then
-                return true -- Les lasers sont visibles = base protégée
-            end
-        end
-    end
-    return false
-end
-
-function MohaHub:AjouterHero(nom, config)
+function InternalSystem:AjouterHero(nom, config)
     if not config.ValeurNum then
         if config.Prix then config.ValeurNum = ConvertirEnNombre(config.Prix)
         elseif config.Gen then config.ValeurNum = config.Gen
@@ -120,1874 +83,564 @@ function MohaHub:AjouterHero(nom, config)
     self.Heros[nom] = config
 end
 
--- Héros de base
-MohaHub:AjouterHero("Glorbo Fruttodrillo", {Rarete="Legendary", Prix="200K", Gen=938})
-MohaHub:AjouterHero("Trulimero Trulicina", {Rarete="Epic", Prix="20K", Gen=188})
-MohaHub:AjouterHero("Perochello Lemonchello", {Rarete="Epic", Prix="27.5K", Gen=160})
-MohaHub:AjouterHero("Cappuccino Assassino", {Rarete="Epic", Prix="10K", Gen=113})
-MohaHub:AjouterHero("Brr Brr Patapim", {Rarete="Epic", Prix="15K", Gen=100})
+-- DATABASE EXPANSION (v10)
+InternalSystem:AjouterHero("Strawberry Elephant", {Rarete="OG", Prix="500M", Gen=500000})
+InternalSystem:AjouterHero("Skibidi Toilet", {Rarete="OG", Prix="450M", Gen=450000})
+InternalSystem:AjouterHero("Meowl", {Rarete="OG", Prix="400M", Gen=400000})
+InternalSystem:AjouterHero("Dragon Gingerini", {Rarete="Secret", Prix="200M", Gen=200000})
+InternalSystem:AjouterHero("Dragon Cannelloni", {Rarete="Secret", Prix="190M", Gen=190000})
+InternalSystem:AjouterHero("Giga Chad", {Rarete="Mythic", Prix="50M", Gen=50000})
+InternalSystem:AjouterHero("Glorbo Fruttodrillo", {Rarete="Legendary", Prix="200K", Gen=938})
+InternalSystem:AjouterHero("Trulimero Trulicina", {Rarete="Epic", Prix="20K", Gen=188})
+InternalSystem:AjouterHero("Perochello Lemonchello", {Rarete="Epic", Prix="27.5K", Gen=160})
+InternalSystem:AjouterHero("Cappuccino Assassino", {Rarete="Epic", Prix="10K", Gen=113})
 
--- ====================== SCAN BRAINROTS ======================
+-- ====================== LOGIQUE DE SCANNER ======================
 local BrainrotsScannes = {}
+local DossierPlots = Workspace:WaitForChild("Plots", 5)
+
 task.spawn(function()
-    task.wait(1)
-    if DossierAnimaux then
-        for _, modele in pairs(DossierAnimaux:GetChildren()) do
-            local op = modele:FindFirstChild("Price") or modele:FindFirstChild("Prix") or modele:FindFirstChild("Value")
-            local or_ = modele:FindFirstChild("Rarity") or modele:FindFirstChild("Rarete")
-            local pT = op and tostring(op.Value) or "0"
-            local rT = or_ and tostring(or_.Value) or "Normal"
-            local vR = ConvertirEnNombre(pT)
-            table.insert(BrainrotsScannes, {Nom=modele.Name, Rarete=rT, PrixStr=pT, ValeurDeTri=vR})
+    local Assets = ReplicatedStorage:FindFirstChild("Models") or ReplicatedStorage:FindFirstChild("Assets")
+    local Entities = Assets and (Assets:FindFirstChild("Animals") or Assets:FindFirstChild("Brainrots"))
+    
+    if Entities then
+        for _, m in pairs(Entities:GetChildren()) do
+            local p = m:FindFirstChild("Price") or m:FindFirstChild("Value")
+            local r = m:FindFirstChild("Rarity")
+            local vStr = p and tostring(p.Value) or "0"
+            local rStr = r and tostring(r.Value) or "Normal"
+            local vNum = ConvertirEnNombre(vStr)
+            InternalSystem:AjouterHero(m.Name, {Rarete=rStr, Prix=vStr, ValeurNum=vNum})
         end
-        table.sort(BrainrotsScannes, function(a,b) return a.ValeurDeTri > b.ValeurDeTri end)
-        for _, b in ipairs(BrainrotsScannes) do
-            MohaHub:AjouterHero(b.Nom, {Rarete=b.Rarete, Prix=b.PrixStr, ValeurNum=b.ValeurDeTri})
-        end
-        print("[MohaHub] Scan: "..#BrainrotsScannes.." brainrots trouvés.")
     end
 end)
 
--- ====================== COULEURS THÈME ======================
+-- ====================== SÉCURITÉ & ANTI-BAN ======================
+local function Log(...)
+    if InternalSystem.Parametres.DebugMode then print("[v10]", unpack({...})) end
+end
+
+local function HandleStaff(joueur)
+    local staffIDs = {165038031, 28350175, 4104118507}
+    local isStaff = table.find(staffIDs, joueur.UserId) or (joueur:GetRoleInGroup(33423773) ~= "Guest")
+    
+    if isStaff then
+        warn("⚠️ STAFF ALERT: " .. joueur.Name)
+        if InternalSystem.Parametres.ServerHopStaff then
+            -- Logic for Server Hop (TeleportService)
+            local ts = game:GetService("TeleportService")
+            ts:Teleport(game.PlaceId, LocalPlayer)
+        else
+            InternalSystem.Parametres.AutoGrab_Actif = false
+            InternalSystem.Parametres.AutoWalk = false
+        end
+    end
+end
+
+Players.PlayerAdded:Connect(HandleStaff)
+
+-- ====================== UI COLORS & THEME ======================
 local COLORS = {
-    bg = Color3.fromRGB(12, 12, 18),
-    bgLight = Color3.fromRGB(22, 22, 32),
-    card = Color3.fromRGB(28, 28, 40),
-    cardHover = Color3.fromRGB(35, 35, 50),
-    accent1 = Color3.fromRGB(130, 80, 255),   -- Violet
-    accent2 = Color3.fromRGB(255, 60, 130),    -- Rose
-    accent3 = Color3.fromRGB(0, 200, 255),     -- Cyan
-    green = Color3.fromRGB(50, 220, 120),
-    red = Color3.fromRGB(255, 60, 80),
-    textPrimary = Color3.fromRGB(240, 240, 255),
-    textSecondary = Color3.fromRGB(150, 150, 180),
-    border = Color3.fromRGB(60, 60, 90),
-    grabBar = Color3.fromRGB(130, 80, 255),
-    espColor = Color3.fromRGB(255, 180, 0),
+    bg = Color3.fromRGB(10, 10, 15),
+    bgAccent = Color3.fromRGB(18, 18, 28),
+    accent = Color3.fromRGB(130, 80, 255),
+    accent2 = Color3.fromRGB(0, 220, 255),
+    text = Color3.fromRGB(240, 240, 255),
+    textDim = Color3.fromRGB(160, 160, 180),
+    success = Color3.fromRGB(80, 255, 140),
+    danger = Color3.fromRGB(255, 80, 100),
+    warning = Color3.fromRGB(255, 200, 80)
 }
 
--- ====================== CRÉATION GUI PRINCIPAL ======================
-task.defer(function()
-    -- Nettoyer ancien GUI
+-- ====================== CORE UI CONSTRUCTION ======================
+local function CreateUI()
+    -- Cleanup
     for _, g in pairs(HubParent:GetChildren()) do
-        if g.Name == "MohaHubUltimate" or g.Name == "MohaGrabHUD" then g:Destroy() end
+        if g.Name == "SystemV10" then g:Destroy() end
     end
 
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "MohaHubUltimate"
-ScreenGui.Parent = HubParent
-ScreenGui.ResetOnSpawn = false
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    local Gui = Instance.new("ScreenGui")
+    Gui.Name = "SystemV10"
+    Gui.ResetOnSpawn = false
+    Gui.Parent = HubParent
 
--- ====================== BOUTON TOGGLE ======================
-local ToggleBtn = Instance.new("TextButton")
-ToggleBtn.Name = "ToggleBtn"
-ToggleBtn.Size = UDim2.new(0, 50, 0, 50)
-ToggleBtn.Position = UDim2.new(0, 15, 0.5, -25)
-ToggleBtn.BackgroundColor3 = COLORS.accent1
-ToggleBtn.Text = "M"
-ToggleBtn.TextColor3 = Color3.new(1,1,1)
-ToggleBtn.TextSize = 22
-ToggleBtn.Font = Enum.Font.GothamBlack
-ToggleBtn.BorderSizePixel = 0
-ToggleBtn.Parent = ScreenGui
-ToggleBtn.ZIndex = 100
-Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1, 0)
+    -- Toggle Button
+    local Toggle = Instance.new("TextButton")
+    Toggle.Size = UDim2.new(0, 48, 0, 48)
+    Toggle.Position = UDim2.new(0, 20, 0.5, -24)
+    Toggle.BackgroundColor3 = COLORS.bgAccent
+    Toggle.Text = "⚡"
+    Toggle.TextColor3 = COLORS.accent
+    Toggle.TextSize = 22
+    Toggle.Font = Enum.Font.GothamBlack
+    Toggle.Parent = Gui
+    
+    local tCorner = Instance.new("UICorner", Toggle)
+    tCorner.CornerRadius = UDim.new(1, 0)
+    local tStroke = Instance.new("UIStroke", Toggle)
+    tStroke.Color = COLORS.accent
+    tStroke.Thickness = 2
+    tStroke.Transparency = 0.5
 
-local toggleGlow = Instance.new("UIStroke")
-toggleGlow.Parent = ToggleBtn
-toggleGlow.Color = COLORS.accent1
-toggleGlow.Thickness = 2
-toggleGlow.Transparency = 0.3
+    -- Main Container (CanvasGroup for fade)
+    local Main = Instance.new("CanvasGroup")
+    Main.Size = UDim2.new(0, 440, 0, 520)
+    Main.Position = UDim2.new(0.5, -220, 0.5, -260)
+    Main.BackgroundColor3 = COLORS.bg
+    Main.GroupTransparency = 1
+    Main.Visible = false
+    Main.Parent = Gui
+    
+    Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 16)
+    local mStroke = Instance.new("UIStroke", Main)
+    mStroke.Color = COLORS.bgAccent
+    mStroke.Thickness = 2
 
--- Animation pulsation bouton
-task.spawn(function()
-    while ToggleBtn.Parent do
-        TweenService:Create(toggleGlow, TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {Transparency = 0.7}):Play()
-        task.wait(1.5)
-        TweenService:Create(toggleGlow, TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {Transparency = 0.2}):Play()
-        task.wait(1.5)
+    local mGrad = Instance.new("UIGradient", Main)
+    mGrad.Color = ColorSequence.new(COLORS.bg, Color3.fromRGB(5, 5, 10))
+    mGrad.Rotation = 45
+
+    -- Header
+    local Header = Instance.new("Frame")
+    Header.Size = UDim2.new(1, 0, 0, 60)
+    Header.BackgroundTransparency = 1
+    Header.Parent = Main
+
+    local Title = Instance.new("TextLabel")
+    Title.Size = UDim2.new(1, -100, 1, 0)
+    Title.Position = UDim2.new(0, 20, 0, 0)
+    Title.BackgroundTransparency = 1
+    Title.Text = "INTERNAL SYSTEM <font color='#8250FF'>v10</font>"
+    Title.RichText = true
+    Title.TextColor3 = COLORS.text
+    Title.Font = Enum.Font.GothamBlack
+    Title.TextSize = 20
+    Title.TextXAlignment = Enum.TextXAlignment.Left
+    Title.Parent = Header
+
+    local Close = Instance.new("TextButton")
+    Close.Size = UDim2.new(0, 32, 0, 32)
+    Close.Position = UDim2.new(1, -45, 0.5, -16)
+    Close.BackgroundColor3 = COLORS.danger
+    Close.BackgroundTransparency = 0.8
+    Close.Text = "×"
+    Close.TextColor3 = Color3.new(1,1,1)
+    Close.TextSize = 20
+    Close.Parent = Header
+    Instance.new("UICorner", Close).CornerRadius = UDim.new(1, 0)
+
+    -- Tab Bar
+    local TabBar = Instance.new("Frame")
+    TabBar.Size = UDim2.new(1, -40, 0, 40)
+    TabBar.Position = UDim2.new(0, 20, 0, 70)
+    TabBar.BackgroundColor3 = COLORS.bgAccent
+    TabBar.Parent = Main
+    Instance.new("UICorner", TabBar).CornerRadius = UDim.new(0, 8)
+
+    local TabList = Instance.new("UIListLayout", TabBar)
+    TabList.FillDirection = Enum.FillDirection.Horizontal
+    TabList.Padding = UDim.new(0, 5)
+    TabList.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+    local Pages = Instance.new("Frame")
+    Pages.Size = UDim2.new(1, -40, 1, -140)
+    Pages.Position = UDim2.new(0, 20, 0, 120)
+    Pages.BackgroundTransparency = 1
+    Pages.Parent = Main
+
+    local function CreateTab(name, icon)
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(0, 90, 1, -8)
+        btn.Position = UDim2.new(0, 0, 0, 4)
+        btn.BackgroundColor3 = COLORS.accent
+        btn.BackgroundTransparency = 1
+        btn.Text = icon .. " " .. name
+        btn.TextColor3 = COLORS.textDim
+        btn.Font = Enum.Font.GothamBold
+        btn.TextSize = 12
+        btn.Parent = TabBar
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+        
+        local page = Instance.new("ScrollingFrame")
+        page.Size = UDim2.new(1, 0, 1, 0)
+        page.BackgroundTransparency = 1
+        page.Visible = false
+        page.ScrollBarThickness = 2
+        page.ScrollBarImageColor3 = COLORS.accent
+        page.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        page.Parent = Pages
+        Instance.new("UIListLayout", page).Padding = UDim.new(0, 8)
+
+        btn.MouseButton1Click:Connect(function()
+            for _, p in pairs(Pages:GetChildren()) do p.Visible = false end
+            for _, b in pairs(TabBar:GetChildren()) do 
+                if b:IsA("TextButton") then
+                    TweenService:Create(b, TweenInfo.new(0.3), {BackgroundTransparency = 1, TextColor3 = COLORS.textDim}):Play()
+                end
+            end
+            page.Visible = true
+            TweenService:Create(btn, TweenInfo.new(0.3), {BackgroundTransparency = 0.2, TextColor3 = COLORS.text}):Play()
+        end)
+
+        return page, btn
     end
-end)
 
--- ====================== PANEL PRINCIPAL ======================
-local MainFrame = Instance.new("Frame")
-MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 420, 0, 480)
-MainFrame.Position = UDim2.new(0.5, -210, 0.5, -240)
-MainFrame.BackgroundColor3 = COLORS.bg
-MainFrame.BorderSizePixel = 0
-MainFrame.Visible = false
-MainFrame.Parent = ScreenGui
-MainFrame.ClipsDescendants = true
-Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 16)
+    local pSteal, bSteal = CreateTab("Steal", "⚔️")
+    local pESP, bESP = CreateTab("ESP", "👁️")
+    local pBase, bBase = CreateTab("Base", "🏠")
+    local pConfig, bConfig = CreateTab("Config", "⚙️")
 
-local mainStroke = Instance.new("UIStroke")
-mainStroke.Parent = MainFrame
-mainStroke.Color = COLORS.accent1
-mainStroke.Thickness = 1.5
-mainStroke.Transparency = 0.5
+    -- Default Active
+    pSteal.Visible = true
+    bSteal.BackgroundTransparency = 0.2
+    bSteal.TextColor3 = COLORS.text
 
--- Gradient de fond subtil
-local bgGradient = Instance.new("UIGradient")
-bgGradient.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(15, 10, 30)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(8, 8, 15))
-})
-bgGradient.Rotation = 145
-bgGradient.Parent = MainFrame
+    -- Components
+    local function AddToggle(parent, text, configKey, callback)
+        local f = Instance.new("TextButton")
+        f.Size = UDim2.new(1, -10, 0, 45)
+        f.BackgroundColor3 = COLORS.bgAccent
+        f.Text = ""
+        f.Parent = parent
+        Instance.new("UICorner", f).CornerRadius = UDim.new(0, 8)
+        
+        local lbl = Instance.new("TextLabel")
+        lbl.Size = UDim2.new(0.7, 0, 1, 0)
+        lbl.Position = UDim2.new(0, 15, 0, 0)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = text
+        lbl.TextColor3 = COLORS.text
+        lbl.Font = Enum.Font.GothamSemibold
+        lbl.TextSize = 13
+        lbl.TextXAlignment = Enum.TextXAlignment.Left
+        lbl.Parent = f
 
--- Animation pulsation du cadre
-task.spawn(function()
-    while MainFrame.Parent do
-        if MainFrame.Visible then
-            TweenService:Create(mainStroke, TweenInfo.new(2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {Transparency = 0.2}):Play()
-            task.wait(2)
-            TweenService:Create(mainStroke, TweenInfo.new(2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {Transparency = 0.7}):Play()
-            task.wait(2)
-        else
-            task.wait(1)
-        end
+        local tbg = Instance.new("Frame")
+        tbg.Size = UDim2.new(0, 44, 0, 24)
+        tbg.Position = UDim2.new(1, -59, 0.5, -12)
+        tbg.BackgroundColor3 = InternalSystem.Parametres[configKey] and COLORS.accent or Color3.fromRGB(40, 40, 50)
+        tbg.Parent = f
+        Instance.new("UICorner", tbg).CornerRadius = UDim.new(1, 0)
+
+        local dot = Instance.new("Frame")
+        dot.Size = UDim2.new(0, 18, 0, 18)
+        dot.Position = InternalSystem.Parametres[configKey] and UDim2.new(1, -21, 0.5, -9) or UDim2.new(0, 3, 0.5, -9)
+        dot.BackgroundColor3 = Color3.new(1,1,1)
+        dot.Parent = tbg
+        Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
+
+        f.MouseButton1Click:Connect(function()
+            InternalSystem.Parametres[configKey] = not InternalSystem.Parametres[configKey]
+            local state = InternalSystem.Parametres[configKey]
+            TweenService:Create(tbg, TweenInfo.new(0.3), {BackgroundColor3 = state and COLORS.accent or Color3.fromRGB(40, 40, 50)}):Play()
+            TweenService:Create(dot, TweenInfo.new(0.3, Enum.EasingStyle.Back), {Position = state and UDim2.new(1, -21, 0.5, -9) or UDim2.new(0, 3, 0.5, -9)}):Play()
+            if callback then callback(state) end
+        end)
     end
-end)
 
--- ====================== HEADER ======================
-local Header = Instance.new("Frame")
-Header.Size = UDim2.new(1, 0, 0, 55)
-Header.BackgroundColor3 = Color3.fromRGB(18, 15, 30)
-Header.BorderSizePixel = 0
-Header.Parent = MainFrame
-Instance.new("UICorner", Header).CornerRadius = UDim.new(0, 16)
+    local function AddSlider(parent, text, min, max, configKey)
+        local f = Instance.new("Frame")
+        f.Size = UDim2.new(1, -10, 0, 70)
+        f.BackgroundColor3 = COLORS.bgAccent
+        f.Parent = parent
+        Instance.new("UICorner", f).CornerRadius = UDim.new(0, 8)
 
-local headerGrad = Instance.new("UIGradient")
-headerGrad.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0, COLORS.accent1),
-    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(20, 15, 35)),
-    ColorSequenceKeypoint.new(1, COLORS.accent2)
-})
-headerGrad.Transparency = NumberSequence.new({
-    NumberSequenceKeypoint.new(0, 0.6),
-    NumberSequenceKeypoint.new(0.3, 0.95),
-    NumberSequenceKeypoint.new(0.7, 0.95),
-    NumberSequenceKeypoint.new(1, 0.6)
-})
-headerGrad.Parent = Header
+        local lbl = Instance.new("TextLabel")
+        lbl.Size = UDim2.new(0.5, 0, 0, 30)
+        lbl.Position = UDim2.new(0, 15, 0, 5)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = text
+        lbl.TextColor3 = COLORS.text
+        lbl.Font = Enum.Font.GothamSemibold
+        lbl.TextSize = 13
+        lbl.TextXAlignment = Enum.TextXAlignment.Left
+        lbl.Parent = f
 
-local TitleLabel = Instance.new("TextLabel")
-TitleLabel.Size = UDim2.new(1, -60, 1, 0)
-TitleLabel.Position = UDim2.new(0, 15, 0, 0)
-TitleLabel.BackgroundTransparency = 1
-TitleLabel.Text = "⚡ MOHA HUB v9"
-TitleLabel.TextColor3 = COLORS.textPrimary
-TitleLabel.Font = Enum.Font.GothamBlack
-TitleLabel.TextSize = 20
-TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
-TitleLabel.Parent = Header
+        local val = Instance.new("TextLabel")
+        val.Size = UDim2.new(0.4, 0, 0, 30)
+        val.Position = UDim2.new(0.6, -15, 0, 5)
+        val.BackgroundTransparency = 1
+        val.Text = tostring(InternalSystem.Parametres[configKey])
+        val.TextColor3 = COLORS.accent2
+        val.Font = Enum.Font.GothamBold
+        val.TextSize = 13
+        val.TextXAlignment = Enum.TextXAlignment.Right
+        val.Parent = f
 
-local SubTitle = Instance.new("TextLabel")
-SubTitle.Size = UDim2.new(0, 200, 0, 14)
-SubTitle.Position = UDim2.new(1, -210, 0.5, -7)
-SubTitle.BackgroundTransparency = 1
-SubTitle.Text = "ULTIMATE EDITION"
-SubTitle.TextColor3 = COLORS.accent2
-SubTitle.Font = Enum.Font.GothamBold
-SubTitle.TextSize = 10
-SubTitle.TextXAlignment = Enum.TextXAlignment.Right
-SubTitle.Parent = Header
+        local track = Instance.new("Frame")
+        track.Size = UDim2.new(1, -30, 0, 6)
+        track.Position = UDim2.new(0, 15, 0, 45)
+        track.BackgroundColor3 = Color3.fromRGB(30,30,40)
+        track.Parent = f
+        Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
 
-local CloseBtn = Instance.new("TextButton")
-CloseBtn.Size = UDim2.new(0, 35, 0, 35)
-CloseBtn.Position = UDim2.new(1, -45, 0.5, -17)
-CloseBtn.BackgroundColor3 = COLORS.red
-CloseBtn.BackgroundTransparency = 0.8
-CloseBtn.Text = "✕"
-CloseBtn.TextColor3 = COLORS.red
-CloseBtn.TextSize = 16
-CloseBtn.Font = Enum.Font.GothamBold
-CloseBtn.BorderSizePixel = 0
-CloseBtn.Parent = Header
-Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(1, 0)
+        local bar = Instance.new("Frame")
+        local pct = (InternalSystem.Parametres[configKey] - min) / (max - min)
+        bar.Size = UDim2.new(pct, 0, 1, 0)
+        bar.BackgroundColor3 = COLORS.accent
+        bar.Parent = track
+        Instance.new("UICorner", bar).CornerRadius = UDim.new(1, 0)
 
--- ====================== ONGLETS ======================
-local TabBar = Instance.new("Frame")
-TabBar.Size = UDim2.new(1, -20, 0, 36)
-TabBar.Position = UDim2.new(0, 10, 0, 60)
-TabBar.BackgroundColor3 = COLORS.bgLight
-TabBar.BorderSizePixel = 0
-TabBar.Parent = MainFrame
-Instance.new("UICorner", TabBar).CornerRadius = UDim.new(0, 10)
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(1, 0, 1, 0)
+        btn.BackgroundTransparency = 1
+        btn.Text = ""
+        btn.Parent = f
 
-local tabLayout = Instance.new("UIListLayout")
-tabLayout.FillDirection = Enum.FillDirection.Horizontal
-tabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-tabLayout.Padding = UDim.new(0, 4)
-tabLayout.Parent = TabBar
-
-local tabPad = Instance.new("UIPadding")
-tabPad.PaddingLeft = UDim.new(0, 4)
-tabPad.PaddingTop = UDim.new(0, 4)
-tabPad.Parent = TabBar
-
-local TAB_NAMES = {"⚔️ Steal", "🧠 ESP", "🛡️ Défense", "ℹ️ Info"}
-local TabButtons = {}
-local TabPages = {}
-local _currentTab = 1
-
--- Pages container
-local PagesContainer = Instance.new("Frame")
-PagesContainer.Size = UDim2.new(1, -20, 1, -110)
-PagesContainer.Position = UDim2.new(0, 10, 0, 102)
-PagesContainer.BackgroundTransparency = 1
-PagesContainer.Parent = MainFrame
-PagesContainer.ClipsDescendants = true
-
-for i, tabName in ipairs(TAB_NAMES) do
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0, 95, 0, 28)
-    btn.BackgroundColor3 = i == 1 and COLORS.accent1 or COLORS.card
-    btn.BackgroundTransparency = i == 1 and 0.2 or 0.5
-    btn.Text = tabName
-    btn.TextColor3 = i == 1 and Color3.new(1,1,1) or COLORS.textSecondary
-    btn.TextSize = 12
-    btn.Font = Enum.Font.GothamBold
-    btn.BorderSizePixel = 0
-    btn.Parent = TabBar
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
-    TabButtons[i] = btn
-
-    local page = Instance.new("ScrollingFrame")
-    page.Size = UDim2.new(1, 0, 1, 0)
-    page.BackgroundTransparency = 1
-    page.ScrollBarThickness = 3
-    page.ScrollBarImageColor3 = COLORS.accent1
-    page.BorderSizePixel = 0
-    page.Visible = (i == 1)
-    page.CanvasSize = UDim2.new(0, 0, 0, 0)
-    page.AutomaticCanvasSize = Enum.AutomaticSize.Y
-    page.Parent = PagesContainer
-    TabPages[i] = page
-
-    local pl = Instance.new("UIListLayout")
-    pl.Padding = UDim.new(0, 8)
-    pl.Parent = page
-
-    local pp = Instance.new("UIPadding")
-    pp.PaddingTop = UDim.new(0, 5)
-    pp.PaddingBottom = UDim.new(0, 10)
-    pp.Parent = page
-
-    btn.MouseButton1Click:Connect(function()
-        local _currentTab = i
-        for j, b in ipairs(TabButtons) do
-            local active = (j == i)
-            TweenService:Create(b, TweenInfo.new(0.25), {
-                BackgroundColor3 = active and COLORS.accent1 or COLORS.card,
-                BackgroundTransparency = active and 0.2 or 0.5,
-                TextColor3 = active and Color3.new(1,1,1) or COLORS.textSecondary
-            }):Play()
-            TabPages[j].Visible = active
+        local function update(input)
+            local r = math.clamp((input.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
+            local v = math.floor(min + (max - min) * r)
+            InternalSystem.Parametres[configKey] = v
+            val.Text = tostring(v)
+            bar.Size = UDim2.new(r, 0, 1, 0)
         end
+
+        local drag = false
+        btn.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then drag = true update(i) end end)
+        UserInputService.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then drag = false end end)
+        UserInputService.InputChanged:Connect(function(i) if drag and i.UserInputType == Enum.UserInputType.MouseMovement then update(i) end end)
+    end
+
+    -- Fill Tabs
+    AddToggle(pSteal, "🟢 Master Auto-Grab", "AutoGrab_Actif")
+    AddToggle(pSteal, "🚶 Pathfinding Walk", "AutoWalk")
+    AddToggle(pSteal, "🤖 Anti-AFK Humanizer", "DebugMode")
+    AddSlider(pSteal, "📏 Grab Range", 5, 100, "GrabRange")
+    AddSlider(pSteal, "⏱️ Action Delay", 1, 5, "GrabDelay")
+
+    AddToggle(pESP, "🕵️ Brainrot Highlights", "BrainrotESP")
+    AddToggle(pESP, "👤 Player Tracker", "PlayerESP")
+    AddToggle(pESP, "🏘️ Base Status ESP", "BaseTimerESP")
+
+    AddToggle(pBase, "🛡️ Shield Auto-Recall", "AutoRecall_Actif")
+    AddToggle(pBase, "🖱️ Base Auto-Clicker", "AutoClicker")
+
+    AddToggle(pConfig, "🌐 Server Hop (Staff)", "ServerHopStaff")
+    AddToggle(pConfig, "🔮 Visual Aura", "AfficherCercle")
+
+    -- Interaction Overlay (Bottom Bar)
+    local Overlay = Instance.new("Frame")
+    Overlay.Size = UDim2.new(0, 320, 0, 50)
+    Overlay.Position = UDim2.new(0.5, -160, 1, -100)
+    Overlay.BackgroundColor3 = COLORS.bg
+    Overlay.Parent = Gui
+    Instance.new("UICorner", Overlay).CornerRadius = UDim.new(0, 12)
+    Instance.new("UIStroke", Overlay).Color = COLORS.bgAccent
+
+    local oStatus = Instance.new("TextLabel")
+    oStatus.Size = UDim2.new(1, -20, 0, 20)
+    oStatus.Position = UDim2.new(0, 10, 0, 8)
+    oStatus.BackgroundTransparency = 1
+    oStatus.Text = "SYSTEM STANDBY"
+    oStatus.TextColor3 = COLORS.textDim
+    oStatus.Font = Enum.Font.GothamBold
+    oStatus.TextSize = 12
+    oStatus.Parent = Overlay
+
+    local oBarBg = Instance.new("Frame")
+    oBarBg.Size = UDim2.new(1, -20, 0, 6)
+    oBarBg.Position = UDim2.new(0, 10, 0, 32)
+    oBarBg.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+    oBarBg.Parent = Overlay
+    Instance.new("UICorner", oBarBg).CornerRadius = UDim.new(1, 0)
+
+    local oBar = Instance.new("Frame")
+    oBar.Size = UDim2.new(0, 0, 1, 0)
+    oBar.BackgroundColor3 = COLORS.accent
+    oBar.Parent = oBarBg
+    Instance.new("UICorner", oBar).CornerRadius = UDim.new(1, 0)
+
+    -- Toggle Logic
+    local open = false
+    Toggle.MouseButton1Click:Connect(function()
+        open = not open
+        Main.Visible = true
+        TweenService:Create(Main, TweenInfo.new(0.4, Enum.EasingStyle.Cubic), {GroupTransparency = open and 0 or 1}):Play()
+        TweenService:Create(Toggle, TweenInfo.new(0.4), {Rotation = open and 45 or 0, TextColor3 = open and COLORS.danger or COLORS.accent}):Play()
+        if not open then task.delay(0.4, function() if not open then Main.Visible = false end end) end
     end)
+    Close.MouseButton1Click:Connect(function() open = false TweenService:Create(Main, TweenInfo.new(0.4), {GroupTransparency = 1}):Play() task.delay(0.4, function() Main.Visible = false end) end)
+
+    return {Status = oStatus, Progress = oBar}
 end
 
--- ====================== COMPOSANTS UI ======================
-local function CreateSection(page, title)
-    local sec = Instance.new("Frame")
-    sec.Size = UDim2.new(1, 0, 0, 28)
-    sec.BackgroundTransparency = 1
-    sec.Parent = page
-    local lbl = Instance.new("TextLabel")
-    lbl.Size = UDim2.new(1, 0, 1, 0)
-    lbl.BackgroundTransparency = 1
-    lbl.Text = "  "..title
-    lbl.TextColor3 = COLORS.accent3
-    lbl.Font = Enum.Font.GothamBold
-    lbl.TextSize = 13
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.Parent = sec
-    return sec
+local HUD = CreateUI()
+
+-- ====================== LOGIQUE DE JEU (MOTEUR V10) ======================
+
+local function GetClosestPlot(onlyMine)
+    for _, plot in pairs(DossierPlots:GetChildren()) do
+        local ownerVal = plot:FindFirstChild("Owner") or plot:FindFirstChild("PlotOwner")
+        local isMine = ownerVal and (ownerVal.Value == LocalPlayer or ownerVal.Value == LocalPlayer.Name)
+        if onlyMine then if isMine then return plot end else if not isMine then return plot end end
+    end
 end
 
-local function CreateToggle(page, name, default, callback)
-    local container = Instance.new("Frame")
-    container.Size = UDim2.new(1, 0, 0, 42)
-    container.BackgroundColor3 = COLORS.card
-    container.BackgroundTransparency = 0.3
-    container.BorderSizePixel = 0
-    container.Parent = page
-    Instance.new("UICorner", container).CornerRadius = UDim.new(0, 10)
-
-    local lbl = Instance.new("TextLabel")
-    lbl.Size = UDim2.new(1, -70, 1, 0)
-    lbl.Position = UDim2.new(0, 14, 0, 0)
-    lbl.BackgroundTransparency = 1
-    lbl.Text = name
-    lbl.TextColor3 = COLORS.textPrimary
-    lbl.Font = Enum.Font.GothamSemibold
-    lbl.TextSize = 13
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.Parent = container
-
-    local toggleFrame = Instance.new("Frame")
-    toggleFrame.Size = UDim2.new(0, 44, 0, 24)
-    toggleFrame.Position = UDim2.new(1, -56, 0.5, -12)
-    toggleFrame.BackgroundColor3 = default and COLORS.green or Color3.fromRGB(60,60,75)
-    toggleFrame.BorderSizePixel = 0
-    toggleFrame.Parent = container
-    Instance.new("UICorner", toggleFrame).CornerRadius = UDim.new(1, 0)
-
-    local circle = Instance.new("Frame")
-    circle.Size = UDim2.new(0, 18, 0, 18)
-    circle.Position = default and UDim2.new(1, -21, 0.5, -9) or UDim2.new(0, 3, 0.5, -9)
-    circle.BackgroundColor3 = Color3.new(1,1,1)
-    circle.BorderSizePixel = 0
-    circle.Parent = toggleFrame
-    Instance.new("UICorner", circle).CornerRadius = UDim.new(1, 0)
-
-    local state = default
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, 0, 1, 0)
-    btn.BackgroundTransparency = 1
-    btn.Text = ""
-    btn.Parent = container
-    btn.MouseButton1Click:Connect(function()
-        state = not state
-        TweenService:Create(toggleFrame, TweenInfo.new(0.3), {
-            BackgroundColor3 = state and COLORS.green or Color3.fromRGB(60,60,75)
-        }):Play()
-        TweenService:Create(circle, TweenInfo.new(0.3, Enum.EasingStyle.Back), {
-            Position = state and UDim2.new(1, -21, 0.5, -9) or UDim2.new(0, 3, 0.5, -9)
-        }):Play()
-        callback(state)
-    end)
-    return container
-end
-
-local function CreateSlider(page, name, min, max, default, suffix, callback)
-    local container = Instance.new("Frame")
-    container.Size = UDim2.new(1, 0, 0, 56)
-    container.BackgroundColor3 = COLORS.card
-    container.BackgroundTransparency = 0.3
-    container.BorderSizePixel = 0
-    container.Parent = page
-    Instance.new("UICorner", container).CornerRadius = UDim.new(0, 10)
-
-    local valLbl = Instance.new("TextLabel")
-    valLbl.Size = UDim2.new(0, 60, 0, 20)
-    valLbl.Position = UDim2.new(1, -70, 0, 4)
-    valLbl.BackgroundTransparency = 1
-    valLbl.Text = tostring(default)..suffix
-    valLbl.TextColor3 = COLORS.accent1
-    valLbl.Font = Enum.Font.GothamBold
-    valLbl.TextSize = 13
-    valLbl.TextXAlignment = Enum.TextXAlignment.Right
-    valLbl.Parent = container
-
-    local lbl = Instance.new("TextLabel")
-    lbl.Size = UDim2.new(1, -80, 0, 24)
-    lbl.Position = UDim2.new(0, 14, 0, 2)
-    lbl.BackgroundTransparency = 1
-    lbl.Text = name
-    lbl.TextColor3 = COLORS.textPrimary
-    lbl.Font = Enum.Font.GothamSemibold
-    lbl.TextSize = 13
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.Parent = container
-
-    local track = Instance.new("Frame")
-    track.Size = UDim2.new(1, -28, 0, 6)
-    track.Position = UDim2.new(0, 14, 0, 38)
-    track.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
-    track.BorderSizePixel = 0
-    track.Parent = container
-    Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
-
-    local fill = Instance.new("Frame")
-    local pct = (default - min) / (max - min)
-    fill.Size = UDim2.new(pct, 0, 1, 0)
-    fill.BackgroundColor3 = COLORS.accent1
-    fill.BorderSizePixel = 0
-    fill.Parent = track
-    Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
-
-    local knob = Instance.new("Frame")
-    knob.Size = UDim2.new(0, 16, 0, 16)
-    knob.Position = UDim2.new(pct, -8, 0.5, -8)
-    knob.BackgroundColor3 = Color3.new(1,1,1)
-    knob.BorderSizePixel = 0
-    knob.Parent = track
-    Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
-    local knobStroke = Instance.new("UIStroke")
-    knobStroke.Parent = knob
-    knobStroke.Color = COLORS.accent1
-    knobStroke.Thickness = 2
-
-    local dragging = false
-    local sliderBtn = Instance.new("TextButton")
-    sliderBtn.Size = UDim2.new(1, 0, 0, 20)
-    sliderBtn.Position = UDim2.new(0, 0, 0, 28)
-    sliderBtn.BackgroundTransparency = 1
-    sliderBtn.Text = ""
-    sliderBtn.Parent = container
-
-    sliderBtn.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-        end
-    end)
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
-        end
-    end)
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            local absPos = track.AbsolutePosition.X
-            local absSize = track.AbsoluteSize.X
-            local rel = math.clamp((input.Position.X - absPos) / absSize, 0, 1)
-            local val = min + (max - min) * rel
-            -- snap
-            if max <= 5 then val = math.floor(val * 10 + 0.5) / 10
-            else val = math.floor(val + 0.5) end
-            local p2 = (val - min) / (max - min)
-            fill.Size = UDim2.new(p2, 0, 1, 0)
-            knob.Position = UDim2.new(p2, -8, 0.5, -8)
-            valLbl.Text = tostring(val)..suffix
-            callback(val)
-        end
-    end)
-    return container
-end
-
-local function CreateDropdown(page, name, options, default, callback)
-    local container = Instance.new("Frame")
-    container.Size = UDim2.new(1, 0, 0, 42)
-    container.BackgroundColor3 = COLORS.card
-    container.BackgroundTransparency = 0.3
-    container.BorderSizePixel = 0
-    container.Parent = page
-    Instance.new("UICorner", container).CornerRadius = UDim.new(0, 10)
-
-    local lbl = Instance.new("TextLabel")
-    lbl.Size = UDim2.new(0.5, 0, 1, 0)
-    lbl.Position = UDim2.new(0, 14, 0, 0)
-    lbl.BackgroundTransparency = 1
-    lbl.Text = name
-    lbl.TextColor3 = COLORS.textPrimary
-    lbl.Font = Enum.Font.GothamSemibold
-    lbl.TextSize = 13
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.Parent = container
-
-    local selected = default
-    local currentIdx = 1
-    for i, v in ipairs(options) do if v == default then currentIdx = i end end
-
-    local selectBtn = Instance.new("TextButton")
-    selectBtn.Size = UDim2.new(0, 120, 0, 28)
-    selectBtn.Position = UDim2.new(1, -132, 0.5, -14)
-    selectBtn.BackgroundColor3 = COLORS.accent1
-    selectBtn.BackgroundTransparency = 0.7
-    selectBtn.Text = "◀ "..selected.." ▶"
-    selectBtn.TextColor3 = COLORS.textPrimary
-    selectBtn.TextSize = 12
-    selectBtn.Font = Enum.Font.GothamBold
-    selectBtn.BorderSizePixel = 0
-    selectBtn.Parent = container
-    Instance.new("UICorner", selectBtn).CornerRadius = UDim.new(0, 8)
-
-    selectBtn.MouseButton1Click:Connect(function()
-        currentIdx = currentIdx % #options + 1
-        selected = options[currentIdx]
-        selectBtn.Text = "◀ "..selected.." ▶"
-        callback(selected)
-    end)
-    return container
-end
-
-local function CreateInfoCard(page, title, content)
-    local container = Instance.new("Frame")
-    container.Size = UDim2.new(1, 0, 0, 80)
-    container.BackgroundColor3 = COLORS.card
-    container.BackgroundTransparency = 0.2
-    container.BorderSizePixel = 0
-    container.Parent = page
-    Instance.new("UICorner", container).CornerRadius = UDim.new(0, 10)
-
-    local t = Instance.new("TextLabel")
-    t.Size = UDim2.new(1, -20, 0, 22)
-    t.Position = UDim2.new(0, 12, 0, 6)
-    t.BackgroundTransparency = 1
-    t.Text = title
-    t.TextColor3 = COLORS.accent1
-    t.Font = Enum.Font.GothamBold
-    t.TextSize = 14
-    t.TextXAlignment = Enum.TextXAlignment.Left
-    t.Parent = container
-
-    local c = Instance.new("TextLabel")
-    c.Size = UDim2.new(1, -20, 1, -30)
-    c.Position = UDim2.new(0, 12, 0, 28)
-    c.BackgroundTransparency = 1
-    c.Text = content
-    c.TextColor3 = COLORS.textSecondary
-    c.Font = Enum.Font.Gotham
-    c.TextSize = 11
-    c.TextXAlignment = Enum.TextXAlignment.Left
-    c.TextYAlignment = Enum.TextYAlignment.Top
-    c.TextWrapped = true
-    c.Parent = container
-    return container
-end
-
--- ====================== REMPLISSAGE DES PAGES ======================
--- Page 1 : STEAL
-local p1 = TabPages[1]
-CreateSection(p1, "AUTO-GRAB ENGINE")
-CreateToggle(p1, "🟢 Activer Auto Grab", false, function(v) MohaHub.Parametres.AutoGrab_Actif = v end)
-CreateToggle(p1, "🧠 Voler aussi les Brainrots", true, function(v) MohaHub.Parametres.GrabBrainrots = v end)
-CreateToggle(p1, "🔮 Afficher cercle visuel", true, function(v) MohaHub.Parametres.AfficherCercle = v end)
-CreateSlider(p1, "📏 Range (Studs)", 1, 50, 10, " studs", function(v) MohaHub.Parametres.GrabRange = v end)
-CreateSlider(p1, "⏱️ Délai de vol", 1.0, 5.0, 1.0, "s", function(v) MohaHub.Parametres.GrabDelay = v end)
-CreateDropdown(p1, "🎯 Priorité", {"Highest", "Nearest"}, "Highest", function(v) MohaHub.Parametres.GrabMode = v end)
-
-CreateSection(p1, "OUTILS")
-
--- ===== PARAMÈTRE TP =====
-MohaHub.Parametres.TPGui_Actif = false
-CreateToggle(p1, "🚀 TP Meilleur Brainrot", false, function(v) MohaHub.Parametres.TPGui_Actif = v end)
-
--- ===== PARAMÈTRE CLONE =====
-MohaHub.Parametres.CloneGui_Actif = false
-CreateToggle(p1, "🧒 Auto Clone Panel", false, function(v) MohaHub.Parametres.CloneGui_Actif = v end)
-
--- ==================== MINI GUI: TP BRAINROT ====================
-local TPMiniGui = Instance.new("ScreenGui")
-TPMiniGui.Name = "MohaTPMini"
-TPMiniGui.Parent = HubParent
-TPMiniGui.ResetOnSpawn = false
-TPMiniGui.Enabled = false
-TPMiniGui.DisplayOrder = 998
-
-local tpFrame = Instance.new("Frame")
-tpFrame.Size = UDim2.new(0, 220, 0, 110)
-tpFrame.Position = UDim2.new(0, 10, 0.5, -55)
-tpFrame.BackgroundColor3 = Color3.fromRGB(12, 8, 22)
-tpFrame.BorderSizePixel = 0
-tpFrame.Parent = TPMiniGui
-Instance.new("UICorner", tpFrame).CornerRadius = UDim.new(0, 12)
-local tpStroke = Instance.new("UIStroke", tpFrame)
-tpStroke.Color = COLORS.accent2
-tpStroke.Thickness = 1.5
-
-local tpTitle = Instance.new("TextLabel")
-tpTitle.Size = UDim2.new(1, 0, 0, 28)
-tpTitle.BackgroundTransparency = 1
-tpTitle.Text = "🚀 TP Meilleur Brainrot"
-tpTitle.TextColor3 = COLORS.accent2
-tpTitle.Font = Enum.Font.GothamBold
-tpTitle.TextSize = 13
-tpTitle.Parent = tpFrame
-
-local tpInfoLabel = Instance.new("TextLabel")
-tpInfoLabel.Size = UDim2.new(1, -16, 0, 20)
-tpInfoLabel.Position = UDim2.new(0, 8, 0, 28)
-tpInfoLabel.BackgroundTransparency = 1
-tpInfoLabel.Text = "Scan en cours..."
-tpInfoLabel.TextColor3 = COLORS.textSecondary
-tpInfoLabel.Font = Enum.Font.Gotham
-tpInfoLabel.TextSize = 11
-tpInfoLabel.TextXAlignment = Enum.TextXAlignment.Left
-tpInfoLabel.Parent = tpFrame
-
-local tpActionBtn = Instance.new("TextButton")
-tpActionBtn.Size = UDim2.new(1, -20, 0, 36)
-tpActionBtn.Position = UDim2.new(0, 10, 1, -46)
-tpActionBtn.BackgroundColor3 = COLORS.accent2
-tpActionBtn.BackgroundTransparency = 0.2
-tpActionBtn.Text = "⚡ TP MAINTENANT"
-tpActionBtn.TextColor3 = Color3.new(1,1,1)
-tpActionBtn.Font = Enum.Font.GothamBold
-tpActionBtn.TextSize = 14
-tpActionBtn.BorderSizePixel = 0
-tpActionBtn.Parent = tpFrame
-Instance.new("UICorner", tpActionBtn).CornerRadius = UDim.new(0, 8)
-
--- Stocker la position du meilleur brainrot
-local bestTPPos = nil
-local bestTPName = "?"
-
--- Scan continu pour le TP
+-- AUTO CLIQUER (MINE)
 task.spawn(function()
     while true do
-        if MohaHub.Parametres.TPGui_Actif and DossierPlots then
-            TPMiniGui.Enabled = true
-            local bVal, bName, bPos = -1, "Aucun", nil
-            for _, plot in pairs(DossierPlots:GetChildren()) do
-                local ap = plot:FindFirstChild("AnimalPodiums")
-                if not ap then continue end
-                local sh = plot:FindFirstChild("StealHitbox")
-                for _, podium in pairs(ap:GetChildren()) do
-                    for _, desc in pairs(podium:GetDescendants()) do
-                        if desc:IsA("Model") and MohaHub.Heros[desc.Name] then
-                            local hd = MohaHub.Heros[desc.Name]
-                            local val = hd and hd.ValeurNum or 0
-                            if val > bVal then
-                                bVal = val
-                                bName = desc.Name
-                                bPos = sh and sh.Position or plot:FindFirstChild("MainRoot") and plot.MainRoot.Position
-                            end
+        if InternalSystem.Parametres.AutoClicker then
+            local mine = GetClosestPlot(true)
+            if mine then
+                for _, btn in pairs(mine:GetDescendants()) do
+                    if btn:IsA("ProximityPrompt") and btn.Enabled then
+                        local at = btn.ActionText:lower()
+                        if at:find("claim") or at:find("collect") or at:find("upgrade") then
+                            fireproximityprompt(btn)
                         end
                     end
                 end
             end
-            bestTPPos = bPos
-            bestTPName = bName
-            if bPos then
-                tpInfoLabel.Text = "🏆 " .. bName .. " ($" .. tostring(bVal) .. ")"
-            else
-                tpInfoLabel.Text = "❌ Aucun brainrot trouvé"
+        end
+        task.wait(1)
+    end
+end)
+
+-- AUTO GRAB ENGINE
+local isGrabbing = false
+RunService.Heartbeat:Connect(function()
+    if not InternalSystem.Parametres.AutoGrab_Actif or isGrabbing then return end
+    
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+
+    -- Check if already carrying
+    if LocalPlayer:GetAttribute("Stealing") then 
+        HUD.Status.Text = "🧠 CARRYING BRAINROT"
+        HUD.Status.TextColor3 = COLORS.success
+        return 
+    end
+
+    local bestTarget, bestVal, bestDist = nil, -1, math.huge
+    local range = InternalSystem.Parametres.GrabRange
+
+    for _, plot in pairs(DossierPlots:GetChildren()) do
+        -- Skip mine
+        local o = plot:FindFirstChild("PlotOwner") or plot:FindFirstChild("Owner")
+        if o and (o.Value == LocalPlayer or o.Value == LocalPlayer.Name) then continue end
+
+        for _, d in pairs(plot:GetDescendants()) do
+            if d:IsA("ProximityPrompt") and d.Enabled then
+                local act = d.ActionText:lower()
+                if act:find("unlock") or act:find("toggle") then continue end
+                
+                local pos = ObtenirPositionPrompt(d)
+                if not pos then continue end
+                local dist = (root.Position - pos).Magnitude
+                if dist > range then continue end
+                if not EstVisible(pos, d.Parent) then continue end
+
+                -- Evaluation
+                local val = 1
+                local overhead = d.Parent:FindFirstChild("AnimalOverhead") or d.Parent.Parent:FindFirstChild("AnimalOverhead")
+                if overhead and overhead:FindFirstChild("DisplayName") then
+                    local name = overhead.DisplayName.Text
+                    if InternalSystem.Heros[name] then val = InternalSystem.Heros[name].ValeurNum end
+                end
+
+                if InternalSystem.Parametres.GrabMode == "Highest" then
+                    if val > bestVal then bestVal = val; bestDist = dist; bestTarget = d end
+                else
+                    if dist < bestDist then bestVal = val; bestDist = dist; bestTarget = d end
+                end
+            end
+        end
+    end
+
+    if bestTarget then
+        isGrabbing = true
+        HUD.Status.Text = "⚡ STEALING..."
+        HUD.Status.TextColor3 = COLORS.warning
+        
+        -- Pathfinding if far
+        if InternalSystem.Parametres.AutoWalk and bestDist > 8 then
+            local path = PathfindingService:CreatePath({AgentRadius = 3})
+            path:ComputeAsync(root.Position, ObtenirPositionPrompt(bestTarget))
+            if path.Status == Enum.PathStatus.Success then
+                for _, w in pairs(path:GetWaypoints()) do
+                    LocalPlayer.Character.Humanoid:MoveTo(w.Position)
+                    if w.Action == Enum.PathWaypointAction.Jump then LocalPlayer.Character.Humanoid.Jump = true end
+                    task.wait(0.1)
+                end
+            end
+        end
+
+        local hold = bestTarget.HoldDuration
+        local duration = math.max(hold, InternalSystem.Parametres.GrabDelay)
+        
+        local start = tick()
+        local conn
+        conn = RunService.RenderStepped:Connect(function()
+            local elapsed = tick() - start
+            local pct = math.clamp(elapsed / duration, 0, 1)
+            HUD.Progress.Size = UDim2.new(pct, 0, 1, 0)
+            if pct >= 1 then conn:Disconnect() end
+        end)
+
+        fireproximityprompt(bestTarget)
+        task.wait(duration + 0.2)
+        
+        HUD.Progress.Size = UDim2.new(0, 0, 1, 0)
+        isGrabbing = false
+    else
+        HUD.Status.Text = "🔍 SCANNING AREA..."
+        HUD.Status.TextColor3 = COLORS.textDim
+    end
+end)
+
+-- AURA VISUELLE
+local Aura = Instance.new("Part")
+Aura.Shape = Enum.PartType.Cylinder
+Aura.Material = Enum.Material.Neon
+Aura.Transparency = 0.8
+Aura.Anchored = true
+Aura.CanCollide = false
+Aura.CastShadow = false
+
+RunService.RenderStepped:Connect(function()
+    local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if InternalSystem.Parametres.AfficherCercle and root then
+        local r = InternalSystem.Parametres.GrabRange * 2
+        Aura.Size = Vector3.new(0.1, r, r)
+        Aura.CFrame = root.CFrame * CFrame.new(0, -2.8, 0) * CFrame.Angles(0, 0, math.rad(90))
+        Aura.Color = InternalSystem.Parametres.AutoGrab_Actif and COLORS.accent or COLORS.textDim
+        Aura.Parent = Workspace
+    else
+        Aura.Parent = nil
+    end
+end)
+
+-- HIGHLIGHT ESP
+local HighFolder = Instance.new("Folder", CoreGui)
+HighFolder.Name = "V10_Highlights"
+
+task.spawn(function()
+    while true do
+        if InternalSystem.Parametres.BrainrotESP then
+            for _, plot in pairs(DossierPlots:GetChildren()) do
+                for _, m in pairs(plot:GetDescendants()) do
+                    if m:IsA("Model") and InternalSystem.Heros[m.Name] then
+                        if not m:FindFirstChild("Highlight") then
+                            local h = Instance.new("Highlight", m)
+                            h.FillColor = COLORS.accent
+                            h.OutlineColor = COLORS.accent2
+                            h.FillTransparency = 0.5
+                        end
+                    end
+                end
             end
         else
-            TPMiniGui.Enabled = false
+            HighFolder:ClearAllChildren()
+            for _, plot in pairs(DossierPlots:GetChildren()) do
+                for _, m in pairs(plot:GetDescendants()) do
+                    local h = m:FindFirstChild("Highlight")
+                    if h then h:Destroy() end
+                end
+            end
         end
         task.wait(2)
     end
 end)
 
-tpActionBtn.MouseButton1Click:Connect(function()
-    local char = LocalPlayer.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    if not root or not bestTPPos then
-        tpActionBtn.Text = "❌ Pas de cible"
-        task.delay(1, function() tpActionBtn.Text = "⚡ TP MAINTENANT" end)
-        return
-    end
-    root.CFrame = CFrame.new(bestTPPos + Vector3.new(0, 3, 0))
-    tpActionBtn.Text = "✅ TP vers " .. bestTPName
-    print("[MohaHub] TP vers " .. bestTPName)
-    task.delay(1.5, function() tpActionBtn.Text = "⚡ TP MAINTENANT" end)
-end)
-
--- ==================== MINI GUI: CLONE ====================
-local CloneMiniGui = Instance.new("ScreenGui")
-CloneMiniGui.Name = "MohaCloneMini"
-CloneMiniGui.Parent = HubParent
-CloneMiniGui.ResetOnSpawn = false
-CloneMiniGui.Enabled = false
-CloneMiniGui.DisplayOrder = 997
-
-local cloneFrame = Instance.new("Frame")
-cloneFrame.Size = UDim2.new(0, 220, 0, 120)
-cloneFrame.Position = UDim2.new(0, 10, 0.5, 70)
-cloneFrame.BackgroundColor3 = Color3.fromRGB(12, 8, 22)
-cloneFrame.BorderSizePixel = 0
-cloneFrame.Parent = CloneMiniGui
-Instance.new("UICorner", cloneFrame).CornerRadius = UDim.new(0, 12)
-local cloneStroke = Instance.new("UIStroke", cloneFrame)
-cloneStroke.Color = COLORS.accent3
-cloneStroke.Thickness = 1.5
-
-local cloneTitle = Instance.new("TextLabel")
-cloneTitle.Size = UDim2.new(1, 0, 0, 28)
-cloneTitle.BackgroundTransparency = 1
-cloneTitle.Text = "🧒 Quantum Cloner"
-cloneTitle.TextColor3 = COLORS.accent3
-cloneTitle.Font = Enum.Font.GothamBold
-cloneTitle.TextSize = 13
-cloneTitle.Parent = cloneFrame
-
-local clonePlaceBtn = Instance.new("TextButton")
-clonePlaceBtn.Size = UDim2.new(1, -20, 0, 32)
-clonePlaceBtn.Position = UDim2.new(0, 10, 0, 32)
-clonePlaceBtn.BackgroundColor3 = COLORS.accent3
-clonePlaceBtn.BackgroundTransparency = 0.3
-clonePlaceBtn.Text = "📍 Placer Clone"
-clonePlaceBtn.TextColor3 = Color3.new(1,1,1)
-clonePlaceBtn.Font = Enum.Font.GothamBold
-clonePlaceBtn.TextSize = 13
-clonePlaceBtn.BorderSizePixel = 0
-clonePlaceBtn.Parent = cloneFrame
-Instance.new("UICorner", clonePlaceBtn).CornerRadius = UDim.new(0, 8)
-
-local cloneSwapBtn = Instance.new("TextButton")
-cloneSwapBtn.Size = UDim2.new(1, -20, 0, 32)
-cloneSwapBtn.Position = UDim2.new(0, 10, 0, 72)
-cloneSwapBtn.BackgroundColor3 = COLORS.accent1
-cloneSwapBtn.BackgroundTransparency = 0.3
-cloneSwapBtn.Text = "🔄 Swap avec Clone"
-cloneSwapBtn.TextColor3 = Color3.new(1,1,1)
-cloneSwapBtn.Font = Enum.Font.GothamBold
-cloneSwapBtn.TextSize = 13
-cloneSwapBtn.BorderSizePixel = 0
-cloneSwapBtn.Parent = cloneFrame
-Instance.new("UICorner", cloneSwapBtn).CornerRadius = UDim.new(0, 8)
-
--- Toggle visibility
-task.spawn(function()
-    while true do
-        CloneMiniGui.Enabled = MohaHub.Parametres.CloneGui_Actif
-        task.wait(0.5)
-    end
-end)
-
-clonePlaceBtn.MouseButton1Click:Connect(function()
-    pcall(function()
-        local net = require(game:GetService("ReplicatedStorage"):WaitForChild("Packages"):WaitForChild("Net"))
-        net:RemoteEvent("UseItem"):FireServer()
-        clonePlaceBtn.Text = "✅ Clone placé !"
-        task.delay(1.5, function() clonePlaceBtn.Text = "📍 Placer Clone" end)
-    end)
-end)
-
-cloneSwapBtn.MouseButton1Click:Connect(function()
-    pcall(function()
-        local net = require(game:GetService("ReplicatedStorage"):WaitForChild("Packages"):WaitForChild("Net"))
-        net:RemoteEvent("QuantumCloner/OnTeleport"):FireServer()
-        cloneSwapBtn.Text = "✅ Swappé !"
-        task.delay(1.5, function() cloneSwapBtn.Text = "🔄 Swap avec Clone" end)
-    end)
-end)
-
--- Page 2 : ESP
-local p2 = TabPages[2]
-CreateSection(p2, "VISUELS")
-CreateToggle(p2, "👁️ Brainrot ESP", false, function(v) MohaHub.Parametres.BrainrotESP = v end)
-CreateToggle(p2, "👤 Player ESP", false, function(v) MohaHub.Parametres.PlayerESP = v end)
-CreateToggle(p2, "🏠 Base Timer ESP", false, function(v) MohaHub.Parametres.BaseTimerESP = v end)
-
-CreateInfoCard(p2, "ℹ️ Info ESP", "L'ESP Player affiche les pseudos et distances.\nL'ESP Base affiche le proprio and le timer de vol.\nLe Brainrot ESP scanne les models invisibles.")
-
--- Page 3 : DEFENSE
-local p3 = TabPages[3]
-CreateSection(p3, "BOUCLIER ANTI-STEAL")
-CreateToggle(p3, "🛡️ Activer Auto-Recall", false, function(v) MohaHub.Parametres.AutoRecall_Actif = v end)
-CreateInfoCard(p3, "ℹ️ Auto-Recall", "Rappelle automatiquement vos héros volés en spammant le Remote Grab sur vos podiums.")
-
--- Page 4 : INFO
-local p4 = TabPages[4]
-CreateSection(p4, "MOHA HUB v9 ULTIMATE")
-CreateInfoCard(p4, "⚡ Moteur de vol", "Mode SAFE: fireproximityprompt uniquement\nAnti-Ban: Pas de remotes UUID")
-CreateInfoCard(p4, "📡 Status", "✅ Mode Safe actif - Pas de ban")
-CreateInfoCard(p4, "🧠 Brainrots", "Scan depuis ReplicatedStorage.Models.Animals\nNombre détecté: "..tostring(#BrainrotsScannes))
-
--- ====================== BARRE DE GRAB EN HAUT (TOUJOURS VISIBLE) ======================
--- Nettoyer ancienne barre
-for _, g in pairs(HubParent:GetChildren()) do
-    if g.Name == "MohaGrabBar" then g:Destroy() end
-end
-
-local GrabBarGui = Instance.new("ScreenGui")
-GrabBarGui.Name = "MohaGrabBar"
-GrabBarGui.Parent = HubParent
-GrabBarGui.ResetOnSpawn = false
-GrabBarGui.Enabled = false
-GrabBarGui.DisplayOrder = 999
-
-local GrabBarFrame = Instance.new("Frame")
-GrabBarFrame.Size = UDim2.new(0, 300, 0, 42)
-GrabBarFrame.Position = UDim2.new(0.5, -150, 0, 5)
-GrabBarFrame.BackgroundColor3 = Color3.fromRGB(8, 6, 18)
-GrabBarFrame.BorderSizePixel = 0
-GrabBarFrame.Active = false -- Empêche d'être cliqué/déplacé
-GrabBarFrame.Parent = GrabBarGui
-
-local barCorner = Instance.new("UICorner", GrabBarFrame)
-barCorner.CornerRadius = UDim.new(0, 10)
-
-local grabBarStroke = Instance.new("UIStroke")
-grabBarStroke.Parent = GrabBarFrame
-grabBarStroke.Color = COLORS.accent1
-grabBarStroke.Thickness = 1.2
-grabBarStroke.Transparency = 0.6
-
-local grabBarGrad = Instance.new("UIGradient")
-grabBarGrad.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(25, 10, 50)),
-    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(8, 6, 18)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(25, 10, 50))
-})
-grabBarGrad.Parent = GrabBarFrame
-
--- Ligne lumineuse en bas de la barre
-local GrabBarGlow = Instance.new("Frame")
-GrabBarGlow.Size = UDim2.new(1, 0, 0, 2)
-GrabBarGlow.Position = UDim2.new(0, 0, 1, -2)
-GrabBarGlow.BackgroundColor3 = COLORS.accent1
-GrabBarGlow.BorderSizePixel = 0
-GrabBarGlow.Parent = GrabBarFrame
-local glowGrad = Instance.new("UIGradient")
-glowGrad.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0, COLORS.accent1),
-    ColorSequenceKeypoint.new(0.5, COLORS.accent2),
-    ColorSequenceKeypoint.new(1, COLORS.accent3)
-})
-glowGrad.Parent = GrabBarGlow
-
--- Barre de progression
-local GrabProgressBg = Instance.new("Frame")
-GrabProgressBg.Size = UDim2.new(1, -24, 0, 8)
-GrabProgressBg.Position = UDim2.new(0, 12, 1, -14)
-GrabProgressBg.BackgroundColor3 = Color3.fromRGB(30, 25, 50)
-GrabProgressBg.BorderSizePixel = 0
-GrabProgressBg.Parent = GrabBarFrame
-Instance.new("UICorner", GrabProgressBg).CornerRadius = UDim.new(1, 0)
-
-local GrabProgressFill = Instance.new("Frame")
-GrabProgressFill.Size = UDim2.new(0, 0, 1, 0)
-GrabProgressFill.BackgroundColor3 = COLORS.accent1
-GrabProgressFill.BorderSizePixel = 0
-GrabProgressFill.Parent = GrabProgressBg
-Instance.new("UICorner", GrabProgressFill).CornerRadius = UDim.new(1, 0)
-
-local grabFillGrad = Instance.new("UIGradient")
-grabFillGrad.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0, COLORS.accent1),
-    ColorSequenceKeypoint.new(0.5, COLORS.accent2),
-    ColorSequenceKeypoint.new(1, COLORS.accent3)
-})
-grabFillGrad.Parent = GrabProgressFill
-
--- Icône animée
-local GrabIcon = Instance.new("TextLabel")
-GrabIcon.Size = UDim2.new(0, 30, 0, 24)
-GrabIcon.Position = UDim2.new(0, 10, 0, 2)
-GrabIcon.BackgroundTransparency = 1
-GrabIcon.Text = "⚡"
-GrabIcon.TextSize = 18
-GrabIcon.Font = Enum.Font.GothamBold
-GrabIcon.Parent = GrabBarFrame
-
--- Status du grab
-local GrabStatusLabel = Instance.new("TextLabel")
-GrabStatusLabel.Size = UDim2.new(0.5, 0, 0, 24)
-GrabStatusLabel.Position = UDim2.new(0, 40, 0, 2)
-GrabStatusLabel.BackgroundTransparency = 1
-GrabStatusLabel.Text = "Recherche de cible..."
-GrabStatusLabel.TextColor3 = COLORS.textPrimary
-GrabStatusLabel.Font = Enum.Font.GothamBold
-GrabStatusLabel.TextSize = 14
-GrabStatusLabel.TextXAlignment = Enum.TextXAlignment.Left
-GrabStatusLabel.Parent = GrabBarFrame
-
--- Timer
-local GrabTimeLabel = Instance.new("TextLabel")
-GrabTimeLabel.Size = UDim2.new(0, 120, 0, 24)
-GrabTimeLabel.Position = UDim2.new(1, -130, 0, 2)
-GrabTimeLabel.BackgroundTransparency = 1
-GrabTimeLabel.Text = ""
-GrabTimeLabel.TextColor3 = COLORS.accent3
-GrabTimeLabel.Font = Enum.Font.GothamBold
-GrabTimeLabel.TextSize = 14
-GrabTimeLabel.TextXAlignment = Enum.TextXAlignment.Right
-GrabTimeLabel.Parent = GrabBarFrame
-
--- ====================== AURA VISUEL ======================
-local CercleAura = Instance.new("Part")
-CercleAura.Shape = Enum.PartType.Cylinder
-CercleAura.Color = COLORS.accent1
-CercleAura.Material = Enum.Material.Neon
-CercleAura.Transparency = 0.7
-CercleAura.Anchored = true
-CercleAura.CanCollide = false
-CercleAura.CastShadow = false
-
-RunService.RenderStepped:Connect(function()
-    local char = LocalPlayer.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    if MohaHub.Parametres.AfficherCercle and MohaHub.Parametres.AutoGrab_Actif and root then
-        CercleAura.Position = root.Position - Vector3.new(0, 2.5, 0)
-        CercleAura.Orientation = Vector3.new(0, 0, 90)
-        local d = MohaHub.Parametres.GrabRange * 2
-        CercleAura.Size = Vector3.new(0.2, d, d)
-        if not CercleAura.Parent then CercleAura.Parent = Workspace end
-    else
-        if CercleAura.Parent then CercleAura.Parent = nil end
-    end
-end)
-
--- ====================== TOGGLE OPEN/CLOSE ======================
-local guiOpen = false
-MainFrame.BackgroundTransparency = 1
-MainFrame.Size = UDim2.new(0, 420, 0, 0)
-
-ToggleBtn.MouseButton1Click:Connect(function()
-    guiOpen = not guiOpen
-    if guiOpen then
-        MainFrame.Visible = true
-        TweenService:Create(MainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0, 420, 0, 480), BackgroundTransparency = 0}):Play()
-    else
-        TweenService:Create(MainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.new(0, 420, 0, 0), BackgroundTransparency = 1}):Play()
-        task.delay(0.4, function() if not guiOpen then MainFrame.Visible = false end end)
-    end
-    
-    TweenService:Create(ToggleBtn, TweenInfo.new(0.3), {
-        BackgroundColor3 = guiOpen and COLORS.accent2 or COLORS.accent1,
-        Rotation = guiOpen and 90 or 0
-    }):Play()
-end)
-
-CloseBtn.MouseButton1Click:Connect(function()
-    guiOpen = false
-    TweenService:Create(MainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.new(0, 420, 0, 0), BackgroundTransparency = 1}):Play()
-    task.delay(0.4, function() MainFrame.Visible = false end)
-    
-    TweenService:Create(ToggleBtn, TweenInfo.new(0.3), {
-        BackgroundColor3 = COLORS.accent1, Rotation = 0
-    }):Play()
-end)
-
--- Drag support
-local dragging, dragStart, startPos
-Header.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true; dragStart = input.Position; startPos = MainFrame.Position
-    end
-end)
-Header.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end
-end)
-UserInputService.InputChanged:Connect(function(input)
-    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - dragStart
-        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-    end
-end)
-
--- ====================== AUTO GRAB ENGINE (FIXED) ======================
--- FIX: Trouver les brainrots VISIBLES sur un plot (pas les templates)
--- Les brainrots sont des Models enfants du plot qui matchent les noms scannés
-local function TrouverBrainrotsVisibles(plot)
-    local brainrots = {}
-    for _, child in pairs(plot:GetDescendants()) do
-        if child:IsA("Model") and MohaHub.Heros[child.Name] then
-            -- Vérifier que le model a des parties visibles (pas invisible)
-            local hasVisiblePart = false
-            local primaryPart = child.PrimaryPart or child:FindFirstChildWhichIsA("BasePart")
-            if primaryPart then
-                for _, p in pairs(child:GetDescendants()) do
-                    if p:IsA("BasePart") and p.Transparency < 0.9 then
-                        hasVisiblePart = true
-                        break
-                    end
-                end
-            end
-            if hasVisiblePart then
-                table.insert(brainrots, child)
-            end
-        end
-    end
-    return brainrots
-end
-
-local function ObtenirMeilleurBrainrot(plot, mode, rootPos)
-    local brainrots = TrouverBrainrotsVisibles(plot)
-    local best = nil
-    local bestVal = -1
-    local bestDist = math.huge
-    local bestName = "Inconnu"
-
-    for _, brainrot in pairs(brainrots) do
-        local hd = MohaHub.Heros[brainrot.Name]
-        if hd then
-            local part = brainrot.PrimaryPart or brainrot:FindFirstChildWhichIsA("BasePart")
-            local dist = part and (rootPos - part.Position).Magnitude or math.huge
-
-            if mode == "Highest" then
-                if hd.ValeurNum and hd.ValeurNum > bestVal then
-                    bestVal = hd.ValeurNum
-                    best = brainrot
-                    bestName = brainrot.Name
-                end
-            elseif mode == "Nearest" then
-                if dist < bestDist then
-                    bestDist = dist
-                    best = brainrot
-                    bestName = brainrot.Name
-                end
-            end
-        end
-    end
-    return best, bestName, bestVal
-end
-
--- FIX: Lire le prix depuis le overhead BillboardGui du brainrot sur le plot
-local function LirePrixOverhead(model)
-    for _, desc in pairs(model:GetDescendants()) do
-        if desc:IsA("BillboardGui") then
-            local priceLabel = desc:FindFirstChild("Price") or desc:FindFirstChild("prix")
-            if priceLabel and priceLabel:IsA("TextLabel") then
-                return priceLabel.Text
-            end
-            -- Chercher dans tous les TextLabels
-            for _, lbl in pairs(desc:GetDescendants()) do
-                if lbl:IsA("TextLabel") and lbl.Name:lower():find("price") then
-                    return lbl.Text
-                end
-            end
-        end
-    end
-    return nil
-end
-
-local enCoursDeGrab = false
-local searchDots = 0
-
--- Trouver TOUS les ProximityPrompts dans un plot (méthode universelle)
-local function TrouverTousPrompts(plot)
-    local prompts = {}
-    for _, desc in pairs(plot:GetDescendants()) do
-        if desc:IsA("ProximityPrompt") then
-            table.insert(prompts, desc)
-        end
-    end
-    return prompts
-end
-
-local function _VerifierProtectionPlot(plot)
-    return MohaHub:EstProtege(plot)
-end
-
-local function JoueurTientBrainrot()
-    local char = LocalPlayer.Character
-    if not char then return false end
-    local hum = char:FindFirstChildWhichIsA("Humanoid")
-    if not hum then return false end
-    -- Check si un Model est tenu (pas un outil classique, pas un chapeau)
-    for _, c in pairs(char:GetChildren()) do
-        if c:IsA("Model") and c:FindFirstChildWhichIsA("BasePart") then
-            -- Exclure le personnage lui-même
-            if c ~= char and c.Name ~= char.Name then
-                return true
-            end
-        end
-    end
-    return false
-end
-
-local function ExecuterAutoGrab()
-    if enCoursDeGrab then return end
-
-    -- Si on tient déjà un brainrot, on arrête
-    if JoueurTientBrainrot() then
-        GrabStatusLabel.Text = "🧠 Brainrot en main !"
-        GrabStatusLabel.TextColor3 = COLORS.green
-        GrabProgressFill.Size = UDim2.new(1, 0, 1, 0)
-        GrabBarGlow.BackgroundColor3 = COLORS.green
-        GrabBarGui.Enabled = true
-        return
-    end
-
-    local char = LocalPlayer.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    if not root or not DossierPlots then return end
-
-    GrabBarGui.Enabled = true
-
-    local mode = MohaHub.Parametres.GrabMode
-    local range = MohaHub.Parametres.GrabRange
-    local bestPrompt, nomCible, bestDist, bestVal = nil, "Cible", math.huge, -1
-
-    for _, plot in pairs(DossierPlots:GetChildren()) do
-        -- Skip notre propre plot
-        local owner = plot:FindFirstChild("Owner") or plot:FindFirstChild("PlotOwner")
-        local isMine = false
-        if owner then
-            if owner:IsA("ObjectValue") and (owner.Value == LocalPlayer or (owner.Value and owner.Value.Name == LocalPlayer.Name)) then isMine = true end
-            if owner:IsA("StringValue") and (owner.Value == LocalPlayer.Name or owner.Value == tostring(LocalPlayer.UserId)) then isMine = true end
-        end
-        if isMine then continue end
-
-        -- Chercher les prompts UNIQUEMENT dans AnimalPodiums
-        local animalPodiums = plot:FindFirstChild("AnimalPodiums")
-        if not animalPodiums then continue end
-
-        for _, podium in pairs(animalPodiums:GetChildren()) do
-            -- Trouver le nom du brainrot sur ce podium (juste pour l'affichage)
-            local brainrotName = nil
-            for _, child in pairs(podium:GetDescendants()) do
-                if child:IsA("Model") and child.Name ~= podium.Name then
-                    -- Essayer le dictionnaire connu, sinon prendre le nom du Model
-                    if MohaHub.Heros[child.Name] then
-                        brainrotName = child.Name
-                        break
-                    elseif not brainrotName and child:FindFirstChildWhichIsA("BasePart") then
-                        brainrotName = child.Name -- Fallback: tout Model avec des Parts
-                    end
-                end
-            end
-
-            for _, desc in pairs(podium:GetDescendants()) do
-                if desc:IsA("ProximityPrompt") then
-                    -- Ignorer les prompts non-steal
-                    local at = desc.ActionText:lower()
-                    if at == "unlock base" or at == "toggle" then continue end
-
-                    -- Vérifier que le prompt est activé
-                    if not desc.Enabled then continue end
-
-                    -- Calculer la distance avec le StealHitbox du plot
-                    local stealHitbox = plot:FindFirstChild("StealHitbox")
-                    local distPart = stealHitbox or podium:FindFirstChildWhichIsA("BasePart")
-                    if not distPart then continue end
-
-                    local dist = (root.Position - distPart.Position).Magnitude
-                    if dist > range then continue end
-
-                    -- Valeur du brainrot (0 si inconnu)
-                    local val = 0
-                    local displayName = brainrotName or ("Podium " .. podium.Name)
-                    if brainrotName and MohaHub.Heros[brainrotName] then
-                        val = MohaHub.Heros[brainrotName].ValeurNum or 0
-                    end
-
-                    local isBetter = false
-                    if mode == "Nearest" then
-                        isBetter = dist < bestDist
-                    elseif mode == "Highest" then
-                        isBetter = val > bestVal or (val == bestVal and dist < bestDist)
-                    end
-
-                    if isBetter then
-                        bestDist = dist
-                        bestVal = val
-                        bestPrompt = desc
-                        nomCible = displayName
-                    end
-                end
-            end
-        end
-    end
-
-    -- Si pas de cible
-    if not bestPrompt then
-        searchDots = (searchDots % 3) + 1
-        GrabStatusLabel.Text = "Recherche de cible" .. string.rep(".", searchDots)
-        GrabStatusLabel.TextColor3 = COLORS.textSecondary
-        GrabTimeLabel.Text = "Range: " .. range .. " studs"
-        GrabProgressFill.Size = UDim2.new(0, 0, 1, 0)
-        GrabBarGlow.BackgroundColor3 = COLORS.accent3
-        return
-    end
-
-    -- Cible trouvée
-    enCoursDeGrab = true
-    GrabStatusLabel.Text = "⚡ VOL: " .. nomCible
-    GrabStatusLabel.TextColor3 = COLORS.accent2
-    GrabProgressFill.Size = UDim2.new(0, 0, 1, 0)
-    GrabBarGlow.BackgroundColor3 = COLORS.accent2
-    print("[MohaHub] Cible: " .. nomCible .. " à " .. math.floor(bestDist) .. "m")
-
-    local temps = MohaHub.Parametres.GrabDelay
-    local startTime = tick()
-
-    local tween = TweenService:Create(GrabProgressFill, TweenInfo.new(temps, Enum.EasingStyle.Linear), {Size = UDim2.new(1, 0, 1, 0)})
-    tween:Play()
-
-    local conn
-    conn = RunService.RenderStepped:Connect(function()
-        local elapsed = tick() - startTime
-        if elapsed >= temps then
-            GrabTimeLabel.Text = string.format("%.1fs / %.1fs", temps, temps)
-            if conn.Connected then conn:Disconnect() end
-        else
-            GrabTimeLabel.Text = string.format("%.1fs / %.1fs", elapsed, temps)
-        end
-    end)
-
-    tween.Completed:Wait()
-    if conn and conn.Connected then conn:Disconnect() end
-
-    GrabStatusLabel.Text = "✅ Exécution du vol..."
-    GrabBarGlow.BackgroundColor3 = COLORS.green
-
-    -- ============================================================
-    -- MÉTHODE SAFE: fireproximityprompt SANS TELEPORT
-    -- ============================================================
-    local ok = false
-    pcall(function()
-        local oH = bestPrompt.HoldDuration
-        local oM = bestPrompt.MaxActivationDistance
-        local oE = bestPrompt.Enabled
-        local oR = bestPrompt.RequiresLineOfSight
-
-        bestPrompt.HoldDuration = 0
-        bestPrompt.MaxActivationDistance = 9999
-        bestPrompt.Enabled = true
-        bestPrompt.RequiresLineOfSight = false
-
-        if fireproximityprompt then
-            print("[MohaHub] Grab: " .. nomCible)
-            fireproximityprompt(bestPrompt)
-            task.wait(0.3)
-            ok = JoueurTientBrainrot()
-        end
-
-        task.delay(0.3, function()
-            pcall(function()
-                bestPrompt.HoldDuration = oH
-                bestPrompt.MaxActivationDistance = oM
-                bestPrompt.Enabled = oE
-                bestPrompt.RequiresLineOfSight = oR
-            end)
-        end)
-    end)
-
-    GrabStatusLabel.Text = ok and "✅ Vol terminé !" or "❌ Échec du vol"
-    GrabStatusLabel.TextColor3 = ok and COLORS.green or COLORS.red
-    if ok then print("[MohaHub] ✅ RÉUSSI !") else print("[MohaHub] ❌ ÉCHOUÉ") end
-    
-    task.wait(0.5)
-    enCoursDeGrab = false
-end
-
-task.spawn(function()
-    -- ========== DIAGNOSTIC AU DÉMARRAGE ==========
-    -- Exécuté UNE SEULE FOIS pour comprendre la structure du jeu
-    task.wait(3) -- Attendre que tout soit chargé
-    if DossierPlots then
-        print("========== [MohaHub] DIAGNOSTIC PLOTS ==========")
-        for i, plot in pairs(DossierPlots:GetChildren()) do
-            if i > 3 then break end -- Limiter à 3 plots pour pas spam
-            print("[MohaHub] Plot: " .. plot.Name .. " (ClassName: " .. plot.ClassName .. ")")
-            -- Lister les enfants directs
-            for _, child in pairs(plot:GetChildren()) do
-                print("  └─ " .. child.Name .. " [" .. child.ClassName .. "]")
-            end
-            -- Chercher les éléments interactifs
-            local promptCount = 0
-            local clickCount = 0
-            local billboardCount = 0
-            for _, desc in pairs(plot:GetDescendants()) do
-                if desc:IsA("ProximityPrompt") then
-                    promptCount = promptCount + 1
-                    print("  ⚡ ProximityPrompt trouvé: " .. desc:GetFullName() .. " ActionText='" .. desc.ActionText .. "'")
-                elseif desc:IsA("ClickDetector") then
-                    clickCount = clickCount + 1
-                    print("  🖱️ ClickDetector trouvé: " .. desc:GetFullName())
-                elseif desc:IsA("BillboardGui") and desc.Enabled then
-                    billboardCount = billboardCount + 1
-                end
-            end
-            print("  📊 Résumé: " .. promptCount .. " prompts, " .. clickCount .. " clicks, " .. billboardCount .. " billboards")
-        end
-        print("========== [MohaHub] FIN DIAGNOSTIC ==========")
-    end
-
-    -- ========== BOUCLE AUTO-GRAB ==========
-    while true do
-        if MohaHub.Parametres.AutoGrab_Actif then
-            local success, err = pcall(ExecuterAutoGrab)
-            if not success then
-                print("[MohaHub] ❌ ERREUR AUTO-GRAB: " .. tostring(err))
-            end
-            task.wait(0.3)
-        else
-            GrabBarGui.Enabled = false
-            task.wait(0.5)
-        end
-    end
-end)
-
--- ====================== AUTO-RECALL (FIXED) ======================
--- Note: Le jeu détecte les spams de remotes, on simule donc légitimement
-task.spawn(function()
-    while true do
-        if MohaHub.Parametres.AutoRecall_Actif then
-            -- On fire les prompts de SES PROPRES podiums
-            local monPlot = nil
-            for _, plot in pairs(DossierPlots:GetChildren()) do
-                local owner = plot:FindFirstChild("Owner") or plot:FindFirstChild("PlotOwner")
-                if owner and (owner.Value == LocalPlayer or owner.Value == LocalPlayer.Name) then
-                    monPlot = plot
-                    break
-                end
-            end
-            if monPlot then
-                for _, prompt in pairs(TrouverTousPrompts(monPlot)) do
-                    if prompt.Name:lower():find("grab") or prompt.ActionText:lower():find("grab") then
-                        pcall(function() fireproximityprompt(prompt) end)
-                    end
-                end
-            end
-        end
-        task.wait(1.5)
-    end
-end)
-
--- ====================== BRAINROT ESP (FIXED) ======================
--- FIX: Ne scanner QUE les brainrots VISIBLES dans workspace.Plots
--- NE PAS scanner ReplicatedStorage (ce sont des templates invisibles)
-local espFolder = Instance.new("Folder")
-espFolder.Name = "MohaESP"
-espFolder.Parent = CoreGui
-
-local espObjects = {}
-
-local RARITY_COLORS = {
-    Legendary = Color3.fromRGB(255, 200, 0),
-    Epic = Color3.fromRGB(180, 60, 255),
-    Rare = Color3.fromRGB(0, 170, 255),
-    Uncommon = Color3.fromRGB(80, 220, 120),
-    Common = Color3.fromRGB(180, 180, 180),
-    Normal = Color3.fromRGB(180, 180, 180),
-    Mythic = Color3.fromRGB(255, 50, 100),
-    Secret = Color3.fromRGB(255, 100, 255),
-}
-
--- FIX: Vérifier qu'un model est un vrai brainrot VISIBLE (pas un template)
-local function EstBrainrotVisible(model)
-    if not model:IsA("Model") then return false end
-    -- Doit avoir au moins une partie visible
-    local hasVisible = false
-    for _, part in pairs(model:GetDescendants()) do
-        if part:IsA("BasePart") and part.Transparency < 0.9 then
-            hasVisible = true
-            break
-        end
-    end
-    if not hasVisible then return false end
-    -- Doit être dans workspace (pas dans ReplicatedStorage)
-    local current = model.Parent
-    while current do
-        if current == ReplicatedStorage then return false end
-        if current == Workspace then return true end
-        current = current.Parent
-    end
-    return false
-end
-
--- FIX: Lire le prix depuis le BillboardGui overhead du brainrot
-local function LirePrixDepuisOverhead(model)
-    for _, desc in pairs(model:GetDescendants()) do
-        if desc:IsA("BillboardGui") then
-            -- Chercher le label Price
-            local priceLbl = desc:FindFirstChild("Price")
-            if priceLbl and (priceLbl:IsA("TextLabel") or priceLbl:IsA("TextButton")) then
-                local txt = priceLbl.Text or ""
-                if txt ~= "" then return txt end
-            end
-            -- Chercher dans tous les enfants
-            for _, child in pairs(desc:GetDescendants()) do
-                if (child:IsA("TextLabel") or child:IsA("TextButton")) then
-                    local n = child.Name:lower()
-                    if n:find("price") or n:find("prix") or n:find("value") or n:find("generation") or n:find("gen") then
-                        local txt = child.Text or ""
-                        if txt ~= "" and txt ~= "0" then return txt end
-                    end
-                end
-            end
-        end
-    end
-    return nil
-end
-
--- FIX: Lire la rareté depuis le BillboardGui overhead
-local function LireRareteDepuisOverhead(model)
-    for _, desc in pairs(model:GetDescendants()) do
-        if desc:IsA("BillboardGui") then
-            local rarLbl = desc:FindFirstChild("Rarity")
-            if rarLbl and (rarLbl:IsA("TextLabel") or rarLbl:IsA("TextButton")) then
-                local txt = rarLbl.Text or ""
-                if txt ~= "" then return txt end
-            end
-        end
-    end
-    return nil
-end
-
-local function CreateESPForModel(model)
-    local part = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
-    if not part then return end
-    if espObjects[model] then return end
-
-    local brainrotName = model.Name
-    local heroData = MohaHub.Heros[brainrotName]
-
-    local prix = LirePrixDepuisOverhead(model)
-    if not prix and heroData then prix = heroData.Prix end
-    prix = prix or "?"
-
-    local rarete = LireRareteDepuisOverhead(model)
-    if not rarete and heroData then rarete = heroData.Rarete end
-    rarete = rarete or "Normal"
-
-    local rarColor = RARITY_COLORS[rarete] or COLORS.espColor
-
-    -- ESP compact et joli
-    local bb = Instance.new("BillboardGui")
-    bb.Name = "ESP"
-    bb.Adornee = part
-    bb.Size = UDim2.new(0, 140, 0, 38)
-    bb.StudsOffset = Vector3.new(0, 3, 0)
-    bb.AlwaysOnTop = true
-    bb.Parent = espFolder
-
-    local bg = Instance.new("Frame")
-    bg.Size = UDim2.new(1, 0, 1, 0)
-    bg.BackgroundColor3 = Color3.fromRGB(8, 6, 16)
-    bg.BackgroundTransparency = 0.1
-    bg.BorderSizePixel = 0
-    bg.Parent = bb
-    Instance.new("UICorner", bg).CornerRadius = UDim.new(0, 6)
-
-    -- Bordure avec couleur de rareté
-    local stroke = Instance.new("UIStroke")
-    stroke.Parent = bg
-    stroke.Color = rarColor
-    stroke.Thickness = 1.5
-    stroke.Transparency = 0.15
-
-    -- Barre colorée en haut (accent rareté)
-    local topBar = Instance.new("Frame")
-    topBar.Size = UDim2.new(1, 0, 0, 2)
-    topBar.Position = UDim2.new(0, 0, 0, 0)
-    topBar.BackgroundColor3 = rarColor
-    topBar.BorderSizePixel = 0
-    topBar.Parent = bg
-    Instance.new("UICorner", topBar).CornerRadius = UDim.new(0, 6)
-
-    -- Nom du brainrot (1ère ligne)
-    local nameL = Instance.new("TextLabel")
-    nameL.Size = UDim2.new(1, -8, 0, 16)
-    nameL.Position = UDim2.new(0, 4, 0, 4)
-    nameL.BackgroundTransparency = 1
-    nameL.Text = brainrotName
-    nameL.TextColor3 = rarColor
-    nameL.Font = Enum.Font.GothamBold
-    nameL.TextSize = 11
-    nameL.TextScaled = true
-    nameL.TextXAlignment = Enum.TextXAlignment.Left
-    nameL.Parent = bg
-
-    -- Prix + Distance (2ème ligne)
-    local distL = Instance.new("TextLabel")
-    distL.Size = UDim2.new(1, -8, 0, 13)
-    distL.Position = UDim2.new(0, 4, 0, 21)
-    distL.BackgroundTransparency = 1
-    distL.Text = tostring(prix) .. " · ..."
-    distL.TextColor3 = COLORS.textSecondary
-    distL.Font = Enum.Font.Gotham
-    distL.TextSize = 9
-    distL.TextScaled = true
-    distL.TextXAlignment = Enum.TextXAlignment.Left
-    distL.Parent = bg
-
-    espObjects[model] = {billboard = bb, distLabel = distL, part = part, prix = tostring(prix)}
-end
-
-local function ClearESP()
-    for _, data in pairs(espObjects) do
-        if data.billboard then data.billboard:Destroy() end
-    end
-    espObjects = {}
-end
-
--- ESP update loop - FIX: UNIQUEMENT les brainrots dans workspace.Plots
-task.spawn(function()
-    while true do
-        if MohaHub.Parametres.BrainrotESP then
-            -- Scanner UNIQUEMENT workspace.Plots pour les brainrots visibles
-            if DossierPlots then
-                for _, plot in pairs(DossierPlots:GetChildren()) do
-                    for _, desc in pairs(plot:GetDescendants()) do
-                        -- Matcher le nom contre notre base de données scannée
-                        if desc:IsA("Model") and MohaHub.Heros[desc.Name] then
-                            if EstBrainrotVisible(desc) then
-                                CreateESPForModel(desc)
-                            end
-                        end
-                    end
-                end
-            end
-
-            -- Aussi scanner les brainrots portés par les joueurs (en cours de vol)
-            for _, player in pairs(Players:GetPlayers()) do
-                if player ~= LocalPlayer and player.Character then
-                    for _, desc in pairs(player.Character:GetDescendants()) do
-                        if desc:IsA("Model") and MohaHub.Heros[desc.Name] then
-                            if EstBrainrotVisible(desc) then
-                                CreateESPForModel(desc)
-                            end
-                        end
-                    end
-                end
-            end
-
-            -- Update distances & cleanup des ESP invalides
-            local char = LocalPlayer.Character
-            local root = char and char:FindFirstChild("HumanoidRootPart")
-            for model, data in pairs(espObjects) do
-                if not model.Parent or not data.part or not data.part.Parent then
-                    data.billboard:Destroy()
-                    espObjects[model] = nil
-                elseif root and data.part then
-                    local dist = math.floor((root.Position - data.part.Position).Magnitude)
-                    data.distLabel.Text = (data.prix or "?") .. " · " .. dist .. "m"
-                end
-            end
-        else
-            ClearESP()
-        end
-        task.wait(1.5)
-    end
-end)
--- ====================== PLAYER ESP ======================
-local playerEspFolder = Instance.new("Folder")
-playerEspFolder.Name = "MohaPlayerESP"
-playerEspFolder.Parent = CoreGui
-
-local playerEspObjects = {}
-
-local function CreatePlayerESP(player)
-    if player == LocalPlayer then return end
-    if playerEspObjects[player] then return end
-
-    local char = player.Character
-    if not char then return end
-    local head = char:FindFirstChild("Head")
-    if not head then return end
-
-    local bb = Instance.new("BillboardGui")
-    bb.Name = "PlayerESP_" .. player.Name
-    bb.Adornee = head
-    bb.Size = UDim2.new(0, 160, 0, 44)
-    bb.StudsOffset = Vector3.new(0, 2.5, 0)
-    bb.AlwaysOnTop = true
-    bb.Parent = playerEspFolder
-
-    local bg = Instance.new("Frame")
-    bg.Size = UDim2.new(1, 0, 1, 0)
-    bg.BackgroundColor3 = Color3.fromRGB(10, 8, 20)
-    bg.BackgroundTransparency = 0.15
-    bg.BorderSizePixel = 0
-    bg.Parent = bb
-    Instance.new("UICorner", bg).CornerRadius = UDim.new(0, 8)
-
-    local stroke = Instance.new("UIStroke")
-    stroke.Parent = bg
-    stroke.Color = COLORS.accent3
-    stroke.Thickness = 1.5
-    stroke.Transparency = 0.2
-
-    -- Gradient top bar
-    local topBar = Instance.new("Frame")
-    topBar.Size = UDim2.new(1, 0, 0, 3)
-    topBar.Position = UDim2.new(0, 0, 0, 0)
-    topBar.BackgroundColor3 = COLORS.accent3
-    topBar.BorderSizePixel = 0
-    topBar.Parent = bg
-    Instance.new("UICorner", topBar).CornerRadius = UDim.new(0, 8)
-    local tGrad = Instance.new("UIGradient")
-    tGrad.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, COLORS.accent3),
-        ColorSequenceKeypoint.new(0.5, COLORS.accent1),
-        ColorSequenceKeypoint.new(1, COLORS.accent2)
-    })
-    tGrad.Parent = topBar
-
-    -- Player icon + name
-    local nameL = Instance.new("TextLabel")
-    nameL.Size = UDim2.new(1, -8, 0, 18)
-    nameL.Position = UDim2.new(0, 4, 0, 5)
-    nameL.BackgroundTransparency = 1
-    nameL.Text = "👤 " .. player.DisplayName
-    nameL.TextColor3 = COLORS.accent3
-    nameL.Font = Enum.Font.GothamBold
-    nameL.TextSize = 12
-    nameL.TextScaled = true
-    nameL.TextXAlignment = Enum.TextXAlignment.Left
-    nameL.Parent = bg
-
-    -- Distance + health
-    local infoL = Instance.new("TextLabel")
-    infoL.Size = UDim2.new(1, -8, 0, 14)
-    infoL.Position = UDim2.new(0, 4, 0, 24)
-    infoL.BackgroundTransparency = 1
-    infoL.Text = "..."
-    infoL.TextColor3 = COLORS.textSecondary
-    infoL.Font = Enum.Font.Gotham
-    infoL.TextSize = 10
-    infoL.TextScaled = true
-    infoL.TextXAlignment = Enum.TextXAlignment.Left
-    infoL.Parent = bg
-
-    playerEspObjects[player] = {billboard = bb, infoLabel = infoL, player = player}
-end
-
-local function ClearPlayerESP()
-    for _, data in pairs(playerEspObjects) do
-        if data.billboard then data.billboard:Destroy() end
-    end
-    playerEspObjects = {}
-end
-
--- ====================== BASE TIMER ESP ======================
-local baseEspFolder = Instance.new("Folder")
-baseEspFolder.Name = "MohaBaseESP"
-baseEspFolder.Parent = CoreGui
-
-local baseEspObjects = {}
-
--- Scrape timers from game's native Billboards (Plot.Purchases or Plot.AnimalPodiums)
-local function ScrapeTimerFromUI(plot)
-    local timers = {}
-    for _, desc in pairs(plot:GetDescendants()) do
-        if desc:IsA("BillboardGui") and desc.Enabled then
-            local lbl = desc:FindFirstChild("RemainingTime") or desc:FindFirstChild("Timer") or desc:FindFirstChild("Countdown")
-            if lbl and (lbl:IsA("TextLabel") or lbl:IsA("TextButton")) and lbl.Visible then
-                local txt = lbl.Text:gsub("<[^>]+>", "") -- Remove RichText tags
-                if txt ~= "" and (txt:find(":") or txt:find("s") or txt:find("READY")) then
-                    table.insert(timers, txt)
-                end
-            end
-        end
-    end
-    -- Pick the most relevant timer (usually the longest or formatted x:xx)
-    if #timers > 0 then
-        table.sort(timers, function(a, b) return (#a > #b) end) -- Prioritize long formatted strings
-        return timers[1]
-    end
-    return nil
-end
-
-local function CreateBaseESP(plot)
-    if baseEspObjects[plot] then return end
-
-    -- Trouver le centre du plot (on sait que MainRoot existe)
-    local center = plot:FindFirstChild("MainRoot") or plot:FindFirstChild("Spawn")
-    if not center then
-        center = plot:FindFirstChildWhichIsA("BasePart")
-    end
-    if not center then return end
-
-    -- Trouver le propriétaire
-    -- Le jeu utilise des UUID comme noms de plots, donc on cherche le Owner
-    local ownerName = MohaHub:ExtraireProprio(plot)
-    
-    -- Si pas de proprio classique, chercher si un joueur est lié à ce plot
-    if not ownerName then
-        -- Certains jeux stockent le lien joueur-plot dans le Workspace
-        for _, player in pairs(Players:GetPlayers()) do
-            if player == LocalPlayer then continue end
-            -- Vérifier si le plot a des objets liés au joueur
-            local plotSign = plot:FindFirstChild("PlotSign")
-            if plotSign then
-                for _, desc in pairs(plotSign:GetDescendants()) do
-                    if (desc:IsA("TextLabel") or desc:IsA("TextButton")) and desc.Text ~= "" then
-                        if desc.Text:find(player.DisplayName) or desc.Text:find(player.Name) then
-                            ownerName = player.DisplayName
-                            break
-                        end
-                    end
-                end
-            end
-            if ownerName then break end
-        end
-    end
-
-    -- Si toujours pas de proprio, vérifier si le plot a des brainrots
-    local hasBrainrots = false
-    local animalPodiums = plot:FindFirstChild("AnimalPodiums")
-    if animalPodiums then
-        for _, desc in pairs(animalPodiums:GetDescendants()) do
-            if desc:IsA("Model") and MohaHub.Heros[desc.Name] then
-                hasBrainrots = true
-                break
-            end
-        end
-    end
-    
-    -- Si vraiment vide (pas de proprio ET pas de brainrots), on skip
-    if not ownerName and not hasBrainrots then return end
-    ownerName = ownerName or "Base Occupée"
-
-    local bb = Instance.new("BillboardGui")
-    bb.Name = "BaseESP_" .. plot.Name:sub(1, 8)
-    bb.Adornee = center
-    bb.Size = UDim2.new(0, 180, 0, 56)
-    bb.StudsOffset = Vector3.new(0, 8, 0)
-    bb.AlwaysOnTop = true
-    bb.Parent = baseEspFolder
-
-    local bg = Instance.new("Frame")
-    bg.Size = UDim2.new(1, 0, 1, 0)
-    bg.BackgroundColor3 = Color3.fromRGB(12, 8, 22)
-    bg.BackgroundTransparency = 0.1
-    bg.BorderSizePixel = 0
-    bg.Parent = bb
-    Instance.new("UICorner", bg).CornerRadius = UDim.new(0, 8)
-
-    local stroke = Instance.new("UIStroke")
-    stroke.Parent = bg
-    stroke.Color = COLORS.accent1
-    stroke.Thickness = 1.5
-    stroke.Transparency = 0.2
-
-    -- Gradient top bar
-    local topBar = Instance.new("Frame")
-    topBar.Size = UDim2.new(1, 0, 0, 3)
-    topBar.BackgroundColor3 = COLORS.accent1
-    topBar.BorderSizePixel = 0
-    topBar.Parent = bg
-    Instance.new("UICorner", topBar).CornerRadius = UDim.new(0, 8)
-    local bGrad = Instance.new("UIGradient")
-    bGrad.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, COLORS.accent1),
-        ColorSequenceKeypoint.new(1, COLORS.accent2)
-    })
-    bGrad.Parent = topBar
-
-    -- Owner name
-    local ownerL = Instance.new("TextLabel")
-    ownerL.Size = UDim2.new(1, -8, 0, 16)
-    ownerL.Position = UDim2.new(0, 4, 0, 5)
-    ownerL.BackgroundTransparency = 1
-    ownerL.Text = "🏠 " .. ownerName
-    ownerL.TextColor3 = COLORS.accent1
-    ownerL.Font = Enum.Font.GothamBold
-    ownerL.TextSize = 11
-    ownerL.TextScaled = true
-    ownerL.TextXAlignment = Enum.TextXAlignment.Left
-    ownerL.Parent = bg
-
-    -- Brainrot count + distance
-    local infoL = Instance.new("TextLabel")
-    infoL.Size = UDim2.new(1, -8, 0, 13)
-    infoL.Position = UDim2.new(0, 4, 0, 21)
-    infoL.BackgroundTransparency = 1
-    infoL.Text = "..."
-    infoL.TextColor3 = COLORS.textSecondary
-    infoL.Font = Enum.Font.Gotham
-    infoL.TextSize = 9
-    infoL.TextScaled = true
-    infoL.TextXAlignment = Enum.TextXAlignment.Left
-    infoL.Parent = bg
-
-    -- Timer (steal cooldown)
-    local timerL = Instance.new("TextLabel")
-    timerL.Size = UDim2.new(1, -8, 0, 13)
-    timerL.Position = UDim2.new(0, 4, 0, 35)
-    timerL.BackgroundTransparency = 1
-    timerL.Text = "⏱ ..."
-    timerL.TextColor3 = COLORS.accent2
-    timerL.Font = Enum.Font.GothamBold
-    timerL.TextSize = 9
-    timerL.TextScaled = true
-    timerL.TextXAlignment = Enum.TextXAlignment.Left
-    timerL.Parent = bg
-
-    baseEspObjects[plot] = {billboard = bb, infoLabel = infoL, timerLabel = timerL, center = center, ownerName = ownerName}
-end
-
-local function ClearBaseESP()
-    for _, data in pairs(baseEspObjects) do
-        if data.billboard then data.billboard:Destroy() end
-    end
-    baseEspObjects = {}
-end
-
--- ====================== PLAYER ESP + BASE ESP UPDATE LOOP ======================
--- Ajout parametres dans MohaHub
-MohaHub.Parametres.PlayerESP = false
-MohaHub.Parametres.BaseTimerESP = false
-
-task.spawn(function()
-    while true do
-        local char = LocalPlayer.Character
-        local root = char and char:FindFirstChild("HumanoidRootPart")
-
-        -- ===== PLAYER ESP =====
-        if MohaHub.Parametres.PlayerESP then
-            for _, player in pairs(Players:GetPlayers()) do
-                if player ~= LocalPlayer and player.Character then
-                    CreatePlayerESP(player)
-                end
-            end
-            -- Update distances
-            for player, data in pairs(playerEspObjects) do
-                local pChar = player.Character
-                local pRoot = pChar and pChar:FindFirstChild("HumanoidRootPart")
-                local pHead = pChar and pChar:FindFirstChild("Head")
-                if not pChar or not pRoot or not pHead then
-                    data.billboard:Destroy()
-                    playerEspObjects[player] = nil
-                elseif root then
-                    local dist = math.floor((root.Position - pRoot.Position).Magnitude)
-                    local hum = pChar:FindFirstChildWhichIsA("Humanoid")
-                    local hp = hum and math.floor(hum.Health) or "?"
-                    data.infoLabel.Text = "📏 " .. dist .. "m · ❤️ " .. tostring(hp)
-                    data.billboard.Adornee = pHead
-                end
-            end
-        else
-            ClearPlayerESP()
-        end
-
-        -- ===== BASE TIMER ESP =====
-        if MohaHub.Parametres.BaseTimerESP and DossierPlots then
-            for _, plot in pairs(DossierPlots:GetChildren()) do
-                CreateBaseESP(plot)
-            end
-            -- Update info
-            for plot, data in pairs(baseEspObjects) do
-                -- Nettoyer si le plot n'existe plus
-                if not plot.Parent or not data.center or not data.center.Parent then
-                    data.billboard:Destroy()
-                    baseEspObjects[plot] = nil
-                elseif root then
-                    local dist = math.floor((root.Position - data.center.Position).Magnitude)
-                    -- Compter les brainrots actifs (podiums avec un Model + prompt actif)
-                    local brainrotCount = 0
-                    local animalPodiums = plot:FindFirstChild("AnimalPodiums")
-                    if animalPodiums then
-                        for _, podium in pairs(animalPodiums:GetChildren()) do
-                            -- Un podium a un brainrot si il contient un Model qui n'est pas le podium lui-même
-                            local hasModel = false
-                            for _, child in pairs(podium:GetDescendants()) do
-                                if child:IsA("Model") and child.Name ~= podium.Name and child:FindFirstChildWhichIsA("BasePart") then
-                                    hasModel = true
-                                    break
-                                end
-                            end
-                            if hasModel then
-                                brainrotCount = brainrotCount + 1
-                            end
-                        end
-                    end
-                    data.infoLabel.Text = "🧠 " .. brainrotCount .. " brainrots · 📏 " .. dist .. "m"
-
-                    -- Timer de protection: Laser check + Timer scraping
-                    local isProtected = MohaHub:EstProtege(plot)
-                    local scrapedTimer = ScrapeTimerFromUI(plot)
-                    
-                    if isProtected then
-                        data.timerLabel.Text = "🔒 Lasers Actifs"
-                        data.timerLabel.TextColor3 = COLORS.red
-                    elseif scrapedTimer then
-                        data.timerLabel.Text = "⏱ " .. scrapedTimer
-                        data.timerLabel.TextColor3 = COLORS.accent2
-                    elseif brainrotCount == 0 then
-                        data.timerLabel.Text = "📭 Vide"
-                        data.timerLabel.TextColor3 = COLORS.textSecondary
-                    else
-                        data.timerLabel.Text = "⏱ Prêt à voler"
-                        data.timerLabel.TextColor3 = COLORS.green
-                    end
-                end
-            end
-        else
-            ClearBaseESP()
-        end
-
-        task.wait(1)
-    end
-end)
-
--- ====================== FIN ======================
-print("[MohaHub] v9 ULTIMATE chargé ! (MODE SAFE)")
-print("[MohaHub] Méthode: fireproximityprompt uniquement")
-print("[MohaHub] Anti-Ban: Aucun remote UUID touché")
-print("[MohaHub] ESP: Brainrot + Player + Base Timer")
-print("[MohaHub] GUI Custom - Mode Safe")
-end)
+Log("Internal System v10.0 SUPERIOR Loaded Successfully.")
