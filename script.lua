@@ -1,337 +1,309 @@
 -- ==============================================================================
--- DIAGNOSTIC MINIMAL V11 - Steal A Brainrot
--- Objectif: Identifier l'étape exacte du blocage
+-- DIAGNOSTIC V11-CORRIGÉ - Steal A Brainrot
+-- Correction: Détection de position sans RootPart
 -- ==============================================================================
 
-print("[DIAG-001] === SCRIPT STARTED ===")
+print("[DIAG2-001] === SCRIPT STARTED ===")
 
--- ====================== ÉTAPE 1: SERVICES ======================
-print("[DIAG-002] Loading services...")
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
-print("[DIAG-003] Services loaded OK")
 
--- ====================== ÉTAPE 2: VARIABLES JOUEUR ======================
-print("[DIAG-004] Getting LocalPlayer...")
 local LocalPlayer = Players.LocalPlayer
-if not LocalPlayer then
-    print("[DIAG-ERROR] LocalPlayer is NIL!")
-    return
-end
-print("[DIAG-005] LocalPlayer OK: " .. tostring(LocalPlayer.Name))
-
-print("[DIAG-006] Waiting for Character...")
 local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-print("[DIAG-007] Character OK")
-
-print("[DIAG-008] Waiting for HumanoidRootPart...")
 local HRP = Character:WaitForChild("HumanoidRootPart")
-print("[DIAG-009] HRP OK")
 
--- ====================== ÉTAPE 3: GUI PARENT (MOBILE) ======================
-print("[DIAG-010] Determining GUI parent...")
-local HubParent = nil
+-- GUI Parent (Mobile)
+local HubParent = gethui and gethui() or CoreGui
 
-if gethui then
-    print("[DIAG-011] gethui() exists, trying...")
-    local success, result = pcall(function()
-        return gethui()
-    end)
-    if success and result then
-        HubParent = result
-        print("[DIAG-012] gethui() SUCCESS")
-    else
-        print("[DIAG-013] gethui() FAILED: " .. tostring(result))
-    end
-else
-    print("[DIAG-014] gethui() not available")
-end
-
-if not HubParent then
-    print("[DIAG-015] Fallback to CoreGui...")
-    HubParent = CoreGui
-    print("[DIAG-016] CoreGui selected")
-end
-
-print("[DIAG-017] HubParent = " .. tostring(HubParent))
-
--- ====================== ÉTAPE 4: NETTOYAGE GUI EXISTANT ======================
-print("[DIAG-018] Cleaning old GUIs...")
-local cleaned = 0
+-- Cleanup
 for _, child in pairs(HubParent:GetChildren()) do
-    if child.Name == "DiagV11_GUI" then
-        child:Destroy()
-        cleaned = cleaned + 1
-    end
+    if child.Name == "DiagV11C_GUI" then child:Destroy() end
 end
-print("[DIAG-019] Cleaned " .. cleaned .. " old GUI(s)")
 
--- ====================== ÉTAPE 5: CRÉATION GUI ======================
-print("[DIAG-020] Creating ScreenGui...")
+-- GUI
 local Gui = Instance.new("ScreenGui")
-Gui.Name = "DiagV11_GUI"
+Gui.Name = "DiagV11C_GUI"
 Gui.ResetOnSpawn = false
 Gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+Gui.Parent = HubParent
 
-print("[DIAG-021] Parenting GUI...")
-local parentSuccess, parentError = pcall(function()
-    Gui.Parent = HubParent
-end)
-
-if not parentSuccess then
-    print("[DIAG-ERROR] GUI Parenting FAILED: " .. tostring(parentError))
-    return
-end
-print("[DIAG-022] GUI Parented OK")
-
--- ====================== ÉTAPE 6: CRÉATION FRAME PRINCIPALE ======================
-print("[DIAG-023] Creating Main Frame...")
 local MainFrame = Instance.new("Frame")
-MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 300, 0, 150)
-MainFrame.Position = UDim2.new(0.5, -150, 0.5, -75)
+MainFrame.Size = UDim2.new(0, 320, 0, 200)
+MainFrame.Position = UDim2.new(0.5, -160, 0.5, -100)
 MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
-MainFrame.BorderSizePixel = 0
 MainFrame.Parent = Gui
-print("[DIAG-024] Main Frame created")
 
-print("[DIAG-025] Adding corner...")
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 10)
-corner.Parent = MainFrame
-print("[DIAG-026] Corner added")
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 10)
+Instance.new("UIStroke", MainFrame).Color = Color3.fromRGB(130, 80, 255)
+Instance.new("UIStroke", MainFrame).Thickness = 2
 
-print("[DIAG-027] Adding stroke...")
-local stroke = Instance.new("UIStroke")
-stroke.Color = Color3.fromRGB(130, 80, 255)
-stroke.Thickness = 2
-stroke.Parent = MainFrame
-print("[DIAG-028] Stroke added")
-
--- ====================== ÉTAPE 7: TITRE ======================
-print("[DIAG-029] Creating Title...")
 local Title = Instance.new("TextLabel")
-Title.Name = "Title"
-Title.Size = UDim2.new(1, 0, 0, 40)
-Title.Position = UDim2.new(0, 0, 0, 10)
+Title.Size = UDim2.new(1, 0, 0, 30)
+Title.Position = UDim2.new(0, 0, 0, 5)
 Title.BackgroundTransparency = 1
-Title.Text = "DIAGNOSTIC V11"
+Title.Text = "DIAGNOSTIC V11-CORRIGÉ"
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.TextSize = 20
+Title.TextSize = 18
 Title.Font = Enum.Font.GothamBold
 Title.Parent = MainFrame
-print("[DIAG-030] Title created")
 
--- ====================== ÉTAPE 8: BOUTON TEST STEAL ======================
-print("[DIAG-031] Creating Test Button...")
-local TestButton = Instance.new("TextButton")
-TestButton.Name = "TestStealBtn"
-TestButton.Size = UDim2.new(0.8, 0, 0, 50)
-TestButton.Position = UDim2.new(0.1, 0, 0.5, 0)
-TestButton.BackgroundColor3 = Color3.fromRGB(130, 80, 255)
-TestButton.Text = "TEST STEAL"
-TestButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-TestButton.TextSize = 16
-TestButton.Font = Enum.Font.GothamBold
-TestButton.Parent = MainFrame
-print("[DIAG-032] Test Button created")
+-- Bouton Test Steal
+local TestBtn = Instance.new("TextButton")
+TestBtn.Size = UDim2.new(0.9, 0, 0, 40)
+TestBtn.Position = UDim2.new(0.05, 0, 0.25, 0)
+TestBtn.BackgroundColor3 = Color3.fromRGB(130, 80, 255)
+TestBtn.Text = "TEST STEAL (CORRIGÉ)"
+TestBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+TestBtn.TextSize = 14
+TestBtn.Font = Enum.Font.GothamBold
+TestBtn.Parent = MainFrame
+Instance.new("UICorner", TestBtn).CornerRadius = UDim.new(0, 8)
 
-print("[DIAG-033] Adding button corner...")
-local btnCorner = Instance.new("UICorner")
-btnCorner.CornerRadius = UDim.new(0, 8)
-btnCorner.Parent = TestButton
-print("[DIAG-034] Button corner added")
+-- Bouton Inspect Structure
+local InspectBtn = Instance.new("TextButton")
+InspectBtn.Size = UDim2.new(0.9, 0, 0, 35)
+InspectBtn.Position = UDim2.new(0.05, 0, 0.5, 0)
+InspectBtn.BackgroundColor3 = Color3.fromRGB(80, 130, 255)
+InspectBtn.Text = "INSPECTER STRUCTURE"
+InspectBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+InspectBtn.TextSize = 12
+InspectBtn.Font = Enum.Font.GothamBold
+InspectBtn.Parent = MainFrame
+Instance.new("UICorner", InspectBtn).CornerRadius = UDim.new(0, 8)
 
--- ====================== ÉTAPE 9: STATUS LABEL ======================
-print("[DIAG-035] Creating Status Label...")
-local StatusLabel = Instance.new("TextLabel")
-StatusLabel.Name = "Status"
-StatusLabel.Size = UDim2.new(1, -20, 0, 30)
-StatusLabel.Position = UDim2.new(0, 10, 1, -35)
-StatusLabel.BackgroundTransparency = 1
-StatusLabel.Text = "Status: Ready"
-StatusLabel.TextColor3 = Color3.fromRGB(170, 170, 170)
-StatusLabel.TextSize = 12
-StatusLabel.Font = Enum.Font.Gotham
-StatusLabel.TextXAlignment = Enum.TextXAlignment.Center
-StatusLabel.Parent = MainFrame
-print("[DIAG-036] Status Label created")
+-- Status
+local Status = Instance.new("TextLabel")
+Status.Size = UDim2.new(1, -20, 0, 50)
+Status.Position = UDim2.new(0, 10, 0.75, 0)
+Status.BackgroundTransparency = 1
+Status.Text = "Status: Prêt"
+Status.TextColor3 = Color3.fromRGB(170, 170, 170)
+Status.TextSize = 11
+Status.Font = Enum.Font.Gotham
+Status.TextWrapped = true
+Status.Parent = MainFrame
 
--- ====================== ÉTAPE 10: DRAGGABLE ======================
-print("[DIAG-037] Making frame draggable...")
+-- Draggable
 local dragging = false
-local dragStart = nil
-local startPos = nil
-
 MainFrame.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or 
-       input.UserInputType == Enum.UserInputType.Touch then
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         dragging = true
-        dragStart = input.Position
-        startPos = MainFrame.Position
-        print("[DIAG-038] Drag started")
     end
 end)
-
-MainFrame.InputChanged:Connect(function(input)
-    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or 
-                     input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - dragStart
-        MainFrame.Position = UDim2.new(
-            startPos.X.Scale, 
-            startPos.X.Offset + delta.X, 
-            startPos.Y.Scale, 
-            startPos.Y.Offset + delta.Y
-        )
-    end
-end)
-
 UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or 
-       input.UserInputType == Enum.UserInputType.Touch then
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         dragging = false
     end
 end)
-print("[DIAG-039] Draggable setup complete")
 
--- ====================== ÉTAPE 11: FONCTION STEAL ======================
-print("[DIAG-040] Defining Steal function...")
-
-local function TrySteal()
-    print("[DIAG-041] === STEAL ATTEMPT STARTED ===")
-    StatusLabel.Text = "Status: Steal started..."
-    StatusLabel.TextColor3 = Color3.fromRGB(255, 210, 50)
+-- ============================================================
+-- FONCTION: Obtenir la position d'un brainrot (MULTI-MÉTHODES)
+-- ============================================================
+local function GetBrainrotPosition(brainrot)
+    print("[DIAG2] Checking brainrot: " .. brainrot.Name)
     
-    -- Étape 11a: Vérifier Plots
-    print("[DIAG-042] Looking for Workspace.Plots...")
+    -- Méthode 1: GetPivot() (fonctionne sur tous les Models)
+    local success, pivot = pcall(function()
+        return brainrot:GetPivot()
+    end)
+    if success and pivot then
+        print("[DIAG2]  ✓ GetPivot() OK: " .. tostring(pivot.Position))
+        return pivot.Position
+    end
+    
+    -- Méthode 2: PrimaryPart
+    if brainrot.PrimaryPart then
+        print("[DIAG2]  ✓ PrimaryPart OK")
+        return brainrot.PrimaryPart.Position
+    end
+    
+    -- Méthode 3: Chercher Base -> Spawn
+    local base = brainrot:FindFirstChild("Base")
+    if base then
+        if base:IsA("BasePart") then
+            print("[DIAG2]  ✓ Base (BasePart) OK")
+            return base.Position
+        end
+        local spawn = base:FindFirstChild("Spawn")
+        if spawn and spawn:IsA("BasePart") then
+            print("[DIAG2]  ✓ Base.Spawn OK")
+            return spawn.Position
+        end
+    end
+    
+    -- Méthode 4: Premier BasePart trouvé
+    for _, child in pairs(brainrot:GetDescendants()) do
+        if child:IsA("BasePart") then
+            print("[DIAG2]  ✓ First BasePart found: " .. child.Name)
+            return child.Position
+        end
+    end
+    
+    print("[DIAG2]  ✗ No position found!")
+    return nil
+end
+
+-- ============================================================
+-- FONCTION: Obtenir le Prompt d'un brainrot
+-- ============================================================
+local function GetBrainrotPrompt(brainrot)
+    local base = brainrot:FindFirstChild("Base")
+    if not base then return nil end
+    
+    local spawn = base:FindFirstChild("Spawn")
+    if not spawn then return nil end
+    
+    local attachment = spawn:FindFirstChild("PromptAttachment")
+    if not attachment then return nil end
+    
+    return attachment:FindFirstChildWhichIsA("ProximityPrompt")
+end
+
+-- ============================================================
+-- BOUTON: INSPECTER STRUCTURE
+-- ============================================================
+InspectBtn.MouseButton1Click:Connect(function()
+    print("[DIAG2] === STRUCTURE INSPECTION ===")
+    Status.Text = "Inspection..."
+    
     local Plots = Workspace:FindFirstChild("Plots")
     if not Plots then
-        print("[DIAG-ERROR] Workspace.Plots NOT FOUND!")
-        StatusLabel.Text = "Status: ERROR - Plots not found"
-        StatusLabel.TextColor3 = Color3.fromRGB(255, 60, 90)
+        Status.Text = "Plots non trouvé!"
         return
     end
-    print("[DIAG-043] Plots found: " .. tostring(#Plots:GetChildren()) .. " children")
     
-    -- Étape 11b: Chercher AnimalPodiums
-    print("[DIAG-044] Searching for AnimalPodiums...")
-    local allBrainrots = {}
+    -- Prendre le premier plot avec des brainrots
+    for _, plot in pairs(Plots:GetChildren()) do
+        local podiums = plot:FindFirstChild("AnimalPodiums")
+        if podiums and #podiums:GetChildren() > 0 then
+            local firstBrainrot = podiums:GetChildren()[1]
+            print("[DIAG2] Inspecting: " .. firstBrainrot.Name)
+            print("[DIAG2] Class: " .. firstBrainrot.ClassName)
+            print("[DIAG2] Children:")
+            
+            for _, child in pairs(firstBrainrot:GetChildren()) do
+                print("  - " .. child.Name .. " (" .. child.ClassName .. ")")
+                if child:FindFirstChild("Spawn") then
+                    print("    -> Has Spawn child!")
+                end
+            end
+            
+            -- Tester GetPivot
+            local pos = GetBrainrotPosition(firstBrainrot)
+            if pos then
+                Status.Text = "Structure OK!\nPosition: " .. tostring(math.floor(pos.X)) .. "," .. tostring(math.floor(pos.Y)) .. "," .. tostring(math.floor(pos.Z))
+                print("[DIAG2] Position found: " .. tostring(pos))
+            else
+                Status.Text = "Structure inconnue!"
+            end
+            return
+        end
+    end
+end)
+
+-- ============================================================
+-- BOUTON: TEST STEAL CORRIGÉ
+-- ============================================================
+TestBtn.MouseButton1Click:Connect(function()
+    print("[DIAG2] === TEST STEAL STARTED ===")
+    Status.Text = "Recherche des brainrots..."
+    Status.TextColor3 = Color3.fromRGB(255, 210, 50)
+    
+    local Plots = Workspace:FindFirstChild("Plots")
+    if not Plots then
+        Status.Text = "ERROR: Plots not found"
+        Status.TextColor3 = Color3.fromRGB(255, 60, 90)
+        return
+    end
+    
+    -- Collecter tous les brainrots avec leur position
+    local brainrots = {}
     
     for _, plot in pairs(Plots:GetChildren()) do
         local podiums = plot:FindFirstChild("AnimalPodiums")
         if podiums then
             for _, brainrot in pairs(podiums:GetChildren()) do
                 if brainrot:IsA("Model") then
-                    table.insert(allBrainrots, brainrot)
+                    local pos = GetBrainrotPosition(brainrot)
+                    if pos then
+                        table.insert(brainrots, {
+                            Model = brainrot,
+                            Position = pos,
+                            Prompt = GetBrainrotPrompt(brainrot)
+                        })
+                    end
                 end
             end
         end
     end
     
-    print("[DIAG-045] Found " .. tostring(#allBrainrots) .. " brainrot models")
+    print("[DIAG2] Found " .. #brainrots .. " brainrots with valid positions")
     
-    if #allBrainrots == 0 then
-        print("[DIAG-ERROR] No brainrots found!")
-        StatusLabel.Text = "Status: No brainrots found"
-        StatusLabel.TextColor3 = Color3.fromRGB(255, 60, 90)
+    if #brainrots == 0 then
+        Status.Text = "ERROR: Aucun brainrot avec position!"
+        Status.TextColor3 = Color3.fromRGB(255, 60, 90)
         return
     end
     
-    -- Étape 11c: Trouver le plus proche
-    print("[DIAG-046] Finding nearest brainrot...")
+    -- Trouver le plus proche
     local nearest = nil
-    local shortestDist = math.huge
+    local minDist = math.huge
     
-    for _, brainrot in pairs(allBrainrots) do
-        local rootPart = brainrot:FindFirstChild("RootPart")
-        if rootPart then
-            local dist = (rootPart.Position - HRP.Position).Magnitude
-            if dist < shortestDist then
-                shortestDist = dist
-                nearest = brainrot
-            end
+    for _, data in pairs(brainrots) do
+        local dist = (data.Position - HRP.Position).Magnitude
+        if dist < minDist then
+            minDist = dist
+            nearest = data
         end
     end
     
     if not nearest then
-        print("[DIAG-ERROR] No brainrot with RootPart found!")
-        StatusLabel.Text = "Status: No valid target"
-        StatusLabel.TextColor3 = Color3.fromRGB(255, 60, 90)
+        Status.Text = "ERROR: Pas de cible trouvée"
         return
     end
     
-    print("[DIAG-047] Target: " .. nearest.Name .. " at " .. tostring(math.floor(shortestDist)) .. " studs")
-    StatusLabel.Text = "Status: Target: " .. nearest.Name
+    print("[DIAG2] Target: " .. nearest.Model.Name .. " at " .. math.floor(minDist) .. " studs")
+    Status.Text = "Cible: " .. nearest.Model.Name .. "\nDistance: " .. math.floor(minDist)
     
-    -- Étape 11d: Chercher le ProximityPrompt
-    print("[DIAG-048] Looking for ProximityPrompt...")
-    local base = nearest:FindFirstChild("Base")
-    if not base then
-        print("[DIAG-ERROR] Base not found in brainrot!")
-        StatusLabel.Text = "Status: ERROR - No Base"
-        StatusLabel.TextColor3 = Color3.fromRGB(255, 60, 90)
+    -- Vérifier le prompt
+    if not nearest.Prompt then
+        print("[DIAG2] ERROR: No ProximityPrompt on target!")
+        Status.Text = "ERROR: Pas de Prompt sur " .. nearest.Model.Name
+        Status.TextColor3 = Color3.fromRGB(255, 60, 90)
         return
     end
-    print("[DIAG-049] Base found")
     
-    local spawn = base:FindFirstChild("Spawn")
-    if not spawn then
-        print("[DIAG-ERROR] Spawn not found in Base!")
-        StatusLabel.Text = "Status: ERROR - No Spawn"
-        StatusLabel.TextColor3 = Color3.fromRGB(255, 60, 90)
-        return
-    end
-    print("[DIAG-050] Spawn found")
+    print("[DIAG2] Prompt found!")
     
-    local attachment = spawn:FindFirstChild("PromptAttachment")
-    if not attachment then
-        print("[DIAG-ERROR] PromptAttachment not found!")
-        StatusLabel.Text = "Status: ERROR - No Attachment"
-        StatusLabel.TextColor3 = Color3.fromRGB(255, 60, 90)
-        return
-    end
-    print("[DIAG-051] PromptAttachment found")
-    
-    local prompt = attachment:FindFirstChildWhichIsA("ProximityPrompt")
-    if not prompt then
-        print("[DIAG-ERROR] ProximityPrompt not found!")
-        StatusLabel.Text = "Status: ERROR - No Prompt"
-        StatusLabel.TextColor3 = Color3.fromRGB(255, 60, 90)
-        return
-    end
-    print("[DIAG-052] ProximityPrompt found!")
-    
-    -- Étape 11e: Téléportation proche (optionnel mais utile)
-    print("[DIAG-053] Teleporting close to target...")
-    local targetPos = nearest:GetPivot().Position + Vector3.new(0, 5, 5)
+    -- Téléportation proche
+    print("[DIAG2] Teleporting...")
+    local targetPos = nearest.Position + Vector3.new(0, 3, 3)
     HRP.CFrame = CFrame.new(targetPos)
-    print("[DIAG-054] Teleported")
+    Status.Text = "Téléportation..."
     
     task.wait(0.3)
     
-    -- Étape 11f: Fire le prompt
-    print("[DIAG-055] Firing ProximityPrompt...")
+    -- Fire le prompt
+    print("[DIAG2] Firing prompt...")
     if fireproximityprompt then
-        print("[DIAG-056] Using fireproximityprompt...")
-        fireproximityprompt(prompt, 0)
-        print("[DIAG-057] fireproximityprompt executed")
+        fireproximityprompt(nearest.Prompt, 0)
+        print("[DIAG2] fireproximityprompt executed!")
     else
-        print("[DIAG-058] fireproximityprompt not available, using manual method...")
-        prompt:InputHoldBegin()
+        nearest.Prompt:InputHoldBegin()
         task.wait(0.1)
-        prompt:InputHoldEnd()
-        print("[DIAG-059] Manual prompt interaction done")
+        nearest.Prompt:InputHoldEnd()
+        print("[DIAG2] Manual interaction done!")
     end
     
-    -- Étape 11g: Chercher le Remote
-    print("[DIAG-060] Looking for DeliverySteal remote...")
-    local remote = nil
+    -- Chercher et fire le remote
+    task.wait(0.2)
+    print("[DIAG2] Looking for DeliverySteal remote...")
     
+    local remote = nil
     local packages = ReplicatedStorage:FindFirstChild("Packages")
     if packages then
         local net = packages:FindFirstChild("Net")
@@ -345,56 +317,26 @@ local function TrySteal()
     end
     
     if remote then
-        print("[DIAG-061] Remote found, firing...")
+        print("[DIAG2] Firing remote...")
         remote:FireServer()
-        print("[DIAG-062] Remote fired")
+        Status.Text = "✓ Steal tenté sur " .. nearest.Model.Name
+        Status.TextColor3 = Color3.fromRGB(0, 255, 150)
     else
-        print("[DIAG-WARNING] DeliverySteal remote not found!")
+        print("[DIAG2] Remote not found, but prompt fired!")
+        Status.Text = "Prompt activé!\n(remote non trouvé)"
+        Status.TextColor3 = Color3.fromRGB(255, 210, 50)
     end
     
-    StatusLabel.Text = "Status: Steal attempted!"
-    StatusLabel.TextColor3 = Color3.fromRGB(0, 255, 150)
-    print("[DIAG-063] === STEAL ATTEMPT COMPLETE ===")
-end
-
-print("[DIAG-064] Steal function defined")
-
--- ====================== ÉTAPE 12: CONNECTION BOUTON ======================
-print("[DIAG-065] Connecting button...")
-
-TestButton.MouseButton1Click:Connect(function()
-    print("[DIAG-066] BUTTON CLICKED!")
-    TestButton.BackgroundColor3 = Color3.fromRGB(100, 60, 200)
-    
-    local success, err = pcall(TrySteal)
-    
-    if not success then
-        print("[DIAG-ERROR] Steal crashed: " .. tostring(err))
-        StatusLabel.Text = "Status: CRASH - " .. tostring(err):sub(1, 30)
-        StatusLabel.TextColor3 = Color3.fromRGB(255, 60, 90)
-    end
-    
-    task.wait(0.2)
-    TestButton.BackgroundColor3 = Color3.fromRGB(130, 80, 255)
+    print("[DIAG2] === TEST COMPLETE ===")
 end)
 
-print("[DIAG-067] Button connected")
-
--- ====================== ÉTAPE 13: ANIMATION D'ENTRÉE ======================
-print("[DIAG-068] Playing entry animation...")
+-- Animation d'entrée
 MainFrame.Size = UDim2.new(0, 0, 0, 0)
-MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
-
 TweenService:Create(MainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Back), {
-    Size = UDim2.new(0, 300, 0, 150),
-    Position = UDim2.new(0.5, -150, 0.5, -75)
+    Size = UDim2.new(0, 320, 0, 200)
 }):Play()
 
-print("[DIAG-069] Animation started")
-
--- ====================== ÉTAPE 14: FINAL ======================
-print("[DIAG-070] === DIAGNOSTIC GUI FULLY LOADED ===")
-print("[DIAG-071] If you see this, the GUI should be visible on screen")
-print("[DIAG-072] Click the 'TEST STEAL' button to test the steal mechanic")
-
-StatusLabel.Text = "Status: Ready - Click button to test"
+print("[DIAG2-070] === GUI LOADED ===")
+print("[DIAG2] Clique sur 'INSPECTER STRUCTURE' d'abord pour vérifier")
+print("[DIAG2] Puis clique sur 'TEST STEAL (CORRIGÉ)'")
+Status.Text = "Prêt! Clique 'INSPECTER STRUCTURE' d'abord"
