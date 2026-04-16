@@ -1,7 +1,7 @@
 -- ==============================================================================
 -- █▀▄▀█ █▀█ █░█ ▄▀█   █░█ █░█ █▄▄
 -- █░▀░█ █▄█ █▀█ █▀█   █▀█ █▄█ █▄█
--- Version: 10.0 SUPERIOR (Redux Edition)
+-- Version: 11.0 MASSIVE (Ultimate Edition)
 -- Jeu: Steal A Brainrot
 -- ==============================================================================
 
@@ -15,6 +15,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local PathfindingService = game:GetService("PathfindingService")
 local HttpService = game:GetService("HttpService")
+local TeleportService = game:GetService("TeleportService")
 
 local LocalPlayer = Players.LocalPlayer
 local _Camera = Workspace.CurrentCamera
@@ -42,34 +43,45 @@ local function ObtenirPositionPrompt(prompt)
     return current and current.Position or nil
 end
 
-local function EstVisible(position, ignorance)
-    local char = LocalPlayer.Character
-    local head = char and char:FindFirstChild("Head")
-    if not head then return false end
-    
-    local origin = head.Position
-    local direction = (position - origin)
-    local params = RaycastParams.new()
-    params.FilterDescendantsInstances = {char, ignorance or Workspace}
-    params.FilterType = Enum.RaycastFilterType.Exclude
-    local result = Workspace:Raycast(origin, direction, params)
-    local isPhysicallyVisible = result == nil or (result.Position - position).Magnitude < 2.5
-
-    local _screenPoint, onScreen = _Camera:WorldToViewportPoint(position)
-    return isPhysicallyVisible and onScreen
-end
-
 -- ====================== CONFIGURATION & DATABASE ======================
 local InternalSystem = {
     Heros = {}, 
     ListeNomsHeros = {},
     Parametres = {
-        AutoGrab_Actif = false, GrabMode = "Highest", GrabDelay = 1.0,
-        GrabRange = 25, AfficherCercle = true, AutoRecall_Actif = false,
-        BrainrotESP = false, PlayerESP = false, BaseTimerESP = false,
-        GrabBrainrots = true, AutoWalk = false, DebugMode = false,
-        ServerHopStaff = false, AutoClicker = false, 
-        ThemeColor = Color3.fromRGB(130, 80, 255)
+        -- STEAL MODES
+        StealHighestGen = true, StealHighestValue = false, StealNearest = false,
+        StealWalking = false, FloorSteal = false, InvisibleDuringSteal = false,
+        PredictiveSteal = false, StealSpeedBoost = false, AutoUnlockBaseDoor = false,
+        DisableStealAnimation = false,
+        
+        -- TELEPORT & MOVEMENT
+        StableTP = false, BodySwapTP = false, TPByMode = "Gen", TPAutoStart = false,
+        ContinuousAutoTP = false, AutoCloneTP = false, GotoBrainrotTP = false,
+        AutoReturnBrainrot = false, InfiniteJump = false, SpeedBoostMode = "Off",
+        AntiRagdollV1 = false, AntiRagdollV2 = false,
+        
+        -- ESP & VISUALS
+        BrainrotESP = false, PlayerESP = false, TimerESP = false, RainbowBase = false,
+        TargetBeam = false, XrayBase = false, ShowProgressBar = true,
+        
+        -- GUI & AUTOMATION
+        GUIScale = 1, NotificationsEnabled = true, LockGUIPos = false,
+        BrainrotTimerGUI = false, AutoHideGUI = false, FavoritePriority = false,
+        InstantCloner = false, MinGenConfig = 0, SearchQuery = "",
+        
+        -- COMBAT & EVENTS
+        AutoDestroyTurret = false, LaserAimbotMode = "Off", PaintballAimbotMode = "Off",
+        AimbotItemsGUI = false, EventGodMode = false, EventAutoSteal = false,
+        EventAutoFarm = false, AutoFarmMinGen = 100, AutoKickAfterSteal = false,
+        
+        -- SECURITY & OPTIMIZATION
+        AntiCheatBypass = true, LoadingScreenBypass = true, TryhardMode = false,
+        TuffOptimizer = false, AntiLag = false, AntiBeeDisco = false, DisableServerFull = false,
+
+        -- INTERNAL/LEGACY
+        AutoGrab_Actif = false, GrabRange = 25, GrabDelay = 1.0, AutoWalk = false,
+        DebugMode = false, ServerHopStaff = false, AutoClicker = false,
+        AfficherCercle = true, ThemeColor = Color3.fromRGB(130, 80, 255)
     }
 }
 
@@ -83,184 +95,159 @@ function InternalSystem:AjouterHero(nom, config)
     self.Heros[nom] = config
 end
 
--- DATABASE EXPANSION (v10)
-InternalSystem:AjouterHero("Strawberry Elephant", {Rarete="OG", Prix="500M", Gen=500000})
-InternalSystem:AjouterHero("Skibidi Toilet", {Rarete="OG", Prix="450M", Gen=450000})
-InternalSystem:AjouterHero("Meowl", {Rarete="OG", Prix="400M", Gen=400000})
-InternalSystem:AjouterHero("Dragon Gingerini", {Rarete="Secret", Prix="200M", Gen=200000})
-InternalSystem:AjouterHero("Dragon Cannelloni", {Rarete="Secret", Prix="190M", Gen=190000})
-InternalSystem:AjouterHero("Giga Chad", {Rarete="Mythic", Prix="50M", Gen=50000})
-InternalSystem:AjouterHero("Glorbo Fruttodrillo", {Rarete="Legendary", Prix="200K", Gen=938})
-InternalSystem:AjouterHero("Trulimero Trulicina", {Rarete="Epic", Prix="20K", Gen=188})
-InternalSystem:AjouterHero("Perochello Lemonchello", {Rarete="Epic", Prix="27.5K", Gen=160})
-InternalSystem:AjouterHero("Cappuccino Assassino", {Rarete="Epic", Prix="10K", Gen=113})
-
--- ====================== LOGIQUE DE SCANNER ======================
-local BrainrotsScannes = {}
-local DossierPlots = Workspace:WaitForChild("Plots", 5)
-
-task.spawn(function()
-    local Assets = ReplicatedStorage:FindFirstChild("Models") or ReplicatedStorage:FindFirstChild("Assets")
-    local Entities = Assets and (Assets:FindFirstChild("Animals") or Assets:FindFirstChild("Brainrots"))
-    
-    if Entities then
-        for _, m in pairs(Entities:GetChildren()) do
-            local p = m:FindFirstChild("Price") or m:FindFirstChild("Value")
-            local r = m:FindFirstChild("Rarity")
-            local vStr = p and tostring(p.Value) or "0"
-            local rStr = r and tostring(r.Value) or "Normal"
-            local vNum = ConvertirEnNombre(vStr)
-            InternalSystem:AjouterHero(m.Name, {Rarete=rStr, Prix=vStr, ValeurNum=vNum})
-        end
-    end
-end)
-
--- ====================== SÉCURITÉ & ANTI-BAN ======================
-local function Log(...)
-    if InternalSystem.Parametres.DebugMode then print("[v10]", unpack({...})) end
-end
-
-local function HandleStaff(joueur)
-    local staffIDs = {165038031, 28350175, 4104118507}
-    local isStaff = table.find(staffIDs, joueur.UserId) or (joueur:GetRoleInGroup(33423773) ~= "Guest")
-    
-    if isStaff then
-        warn("⚠️ STAFF ALERT: " .. joueur.Name)
-        if InternalSystem.Parametres.ServerHopStaff then
-            -- Logic for Server Hop (TeleportService)
-            local ts = game:GetService("TeleportService")
-            ts:Teleport(game.PlaceId, LocalPlayer)
-        else
-            InternalSystem.Parametres.AutoGrab_Actif = false
-            InternalSystem.Parametres.AutoWalk = false
-        end
-    end
-end
-
-Players.PlayerAdded:Connect(HandleStaff)
-
 -- ====================== UI COLORS & THEME ======================
 local COLORS = {
-    bg = Color3.fromRGB(10, 10, 15),
-    bgAccent = Color3.fromRGB(18, 18, 28),
+    bg = Color3.fromRGB(12, 12, 18),
+    bgAccent = Color3.fromRGB(22, 22, 32),
     accent = Color3.fromRGB(130, 80, 255),
     accent2 = Color3.fromRGB(0, 220, 255),
-    text = Color3.fromRGB(240, 240, 255),
-    textDim = Color3.fromRGB(160, 160, 180),
-    success = Color3.fromRGB(80, 255, 140),
-    danger = Color3.fromRGB(255, 80, 100),
-    warning = Color3.fromRGB(255, 200, 80)
+    text = Color3.fromRGB(255, 255, 255),
+    textDim = Color3.fromRGB(170, 170, 190),
+    success = Color3.fromRGB(0, 255, 150),
+    danger = Color3.fromRGB(255, 60, 90),
+    warning = Color3.fromRGB(255, 210, 50)
 }
+
+-- ====================== DRAGGABLE HELPER ======================
+local function MakeDraggable(frame, handle)
+    local dragging, dragInput, dragStart, startPos
+    handle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = frame.Position
+            input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
+        end
+    end)
+    handle.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInput = input end
+    end)
+    RunService.RenderStepped:Connect(function()
+        if dragging and dragInput and not InternalSystem.Parametres.LockGUIPos then
+            local delta = dragInput.Position - dragStart
+            frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+end
 
 -- ====================== CORE UI CONSTRUCTION ======================
 local function CreateUI()
     -- Cleanup
     for _, g in pairs(HubParent:GetChildren()) do
-        if g.Name == "SystemV10" then g:Destroy() end
+        if g.Name == "InternalMassiveV11" then g:Destroy() end
     end
 
     local Gui = Instance.new("ScreenGui")
-    Gui.Name = "SystemV10"
+    Gui.Name = "InternalMassiveV11"
     Gui.ResetOnSpawn = false
     Gui.Parent = HubParent
 
-    -- Toggle Button
+    -- Toggle Button (Mini GUI)
     local Toggle = Instance.new("TextButton")
-    Toggle.Size = UDim2.new(0, 48, 0, 48)
-    Toggle.Position = UDim2.new(0, 20, 0.5, -24)
+    Toggle.Name = "MiniGUI"
+    Toggle.Size = UDim2.new(0, 50, 0, 50)
+    Toggle.Position = UDim2.new(0, 30, 0.5, -25)
     Toggle.BackgroundColor3 = COLORS.bgAccent
     Toggle.Text = "⚡"
     Toggle.TextColor3 = COLORS.accent
-    Toggle.TextSize = 22
+    Toggle.TextSize = 24
     Toggle.Font = Enum.Font.GothamBlack
     Toggle.Parent = Gui
-    
-    local tCorner = Instance.new("UICorner", Toggle)
-    tCorner.CornerRadius = UDim.new(1, 0)
+    Instance.new("UICorner", Toggle).CornerRadius = UDim.new(1, 0)
     local tStroke = Instance.new("UIStroke", Toggle)
     tStroke.Color = COLORS.accent
     tStroke.Thickness = 2
-    tStroke.Transparency = 0.5
+    tStroke.Transparency = 0.4
 
-    -- Main Container (CanvasGroup for fade)
+    -- Main Frame
     local Main = Instance.new("CanvasGroup")
-    Main.Size = UDim2.new(0, 440, 0, 520)
-    Main.Position = UDim2.new(0.5, -220, 0.5, -260)
+    Main.Name = "MainFrame"
+    Main.Size = UDim2.new(0, 500, 0, 560)
+    Main.Position = UDim2.new(0.5, -250, 0.5, -280)
     Main.BackgroundColor3 = COLORS.bg
     Main.GroupTransparency = 1
     Main.Visible = false
     Main.Parent = Gui
-    
-    Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 16)
+    Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 12)
     local mStroke = Instance.new("UIStroke", Main)
     mStroke.Color = COLORS.bgAccent
     mStroke.Thickness = 2
 
-    local mGrad = Instance.new("UIGradient", Main)
-    mGrad.Color = ColorSequence.new(COLORS.bg, Color3.fromRGB(5, 5, 10))
-    mGrad.Rotation = 45
-
-    -- Header
+    -- Header / Drag Handle
     local Header = Instance.new("Frame")
-    Header.Size = UDim2.new(1, 0, 0, 60)
+    Header.Name = "Header"
+    Header.Size = UDim2.new(1, 0, 0, 70)
     Header.BackgroundTransparency = 1
     Header.Parent = Main
-
+    
     local Title = Instance.new("TextLabel")
-    Title.Size = UDim2.new(1, -100, 1, 0)
-    Title.Position = UDim2.new(0, 20, 0, 0)
+    Title.Size = UDim2.new(1, -30, 0, 40)
+    Title.Position = UDim2.new(0, 20, 0, 15)
     Title.BackgroundTransparency = 1
-    Title.Text = "INTERNAL SYSTEM <font color='#8250FF'>v10</font>"
+    Title.Text = "INTERNAL SYSTEM <font color='#8250FF'>v11.0 MASSIVE</font>"
     Title.RichText = true
     Title.TextColor3 = COLORS.text
     Title.Font = Enum.Font.GothamBlack
-    Title.TextSize = 20
+    Title.TextSize = 22
     Title.TextXAlignment = Enum.TextXAlignment.Left
     Title.Parent = Header
+    
+    local Subtitle = Instance.new("TextLabel")
+    Subtitle.Size = UDim2.new(1, -30, 0, 20)
+    Subtitle.Position = UDim2.new(0, 20, 0, 40)
+    Subtitle.BackgroundTransparency = 1
+    Subtitle.Text = "Premium Brainrot Destroyer — 60+ Features"
+    Subtitle.TextColor3 = COLORS.textDim
+    Subtitle.Font = Enum.Font.GothamBold
+    Subtitle.TextSize = 11
+    Subtitle.TextXAlignment = Enum.TextXAlignment.Left
+    Subtitle.Parent = Header
 
-    local Close = Instance.new("TextButton")
-    Close.Size = UDim2.new(0, 32, 0, 32)
-    Close.Position = UDim2.new(1, -45, 0.5, -16)
-    Close.BackgroundColor3 = COLORS.danger
-    Close.BackgroundTransparency = 0.8
-    Close.Text = "×"
-    Close.TextColor3 = Color3.new(1,1,1)
-    Close.TextSize = 20
-    Close.Parent = Header
-    Instance.new("UICorner", Close).CornerRadius = UDim.new(1, 0)
+    local CloseBtn = Instance.new("TextButton")
+    CloseBtn.Size = UDim2.new(0, 30, 0, 30)
+    CloseBtn.Position = UDim2.new(1, -45, 0, 20)
+    CloseBtn.BackgroundColor3 = COLORS.danger
+    CloseBtn.BackgroundTransparency = 0.9
+    CloseBtn.Text = "×"
+    CloseBtn.TextColor3 = COLORS.danger
+    CloseBtn.TextSize = 26
+    CloseBtn.Font = Enum.Font.GothamBold
+    CloseBtn.Parent = Header
+    Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(1, 0)
 
-    -- Tab Bar
-    local TabBar = Instance.new("Frame")
-    TabBar.Size = UDim2.new(1, -40, 0, 40)
-    TabBar.Position = UDim2.new(0, 20, 0, 70)
-    TabBar.BackgroundColor3 = COLORS.bgAccent
-    TabBar.Parent = Main
-    Instance.new("UICorner", TabBar).CornerRadius = UDim.new(0, 8)
-
-    local TabList = Instance.new("UIListLayout", TabBar)
+    -- Tab Container
+    local TabContainer = Instance.new("ScrollingFrame")
+    TabContainer.Name = "Tabs"
+    TabContainer.Size = UDim2.new(1, -40, 0, 45)
+    TabContainer.Position = UDim2.new(0, 20, 0, 85)
+    TabContainer.BackgroundColor3 = COLORS.bgAccent
+    TabContainer.ScrollBarThickness = 0
+    TabContainer.CanvasSize = UDim2.new(1.2, 0, 0, 0)
+    TabContainer.Parent = Main
+    Instance.new("UICorner", TabContainer).CornerRadius = UDim.new(0, 8)
+    
+    local TabList = Instance.new("UIListLayout", TabContainer)
     TabList.FillDirection = Enum.FillDirection.Horizontal
-    TabList.Padding = UDim.new(0, 5)
     TabList.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    TabList.Padding = UDim.new(0, 10)
 
+    -- Page Container
     local Pages = Instance.new("Frame")
-    Pages.Size = UDim2.new(1, -40, 1, -140)
-    Pages.Position = UDim2.new(0, 20, 0, 120)
+    Pages.Size = UDim2.new(1, -40, 1, -210)
+    Pages.Position = UDim2.new(0, 20, 0, 145)
     Pages.BackgroundTransparency = 1
     Pages.Parent = Main
 
     local function CreateTab(name, icon)
         local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(0, 90, 1, -8)
-        btn.Position = UDim2.new(0, 0, 0, 4)
-        btn.BackgroundColor3 = COLORS.accent
+        btn.Size = UDim2.new(0, 85, 1, 0)
         btn.BackgroundTransparency = 1
         btn.Text = icon .. " " .. name
         btn.TextColor3 = COLORS.textDim
         btn.Font = Enum.Font.GothamBold
-        btn.TextSize = 12
-        btn.Parent = TabBar
-        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
-        
+        btn.TextSize = 11
+        btn.Parent = TabContainer
+
         local page = Instance.new("ScrollingFrame")
         page.Size = UDim2.new(1, 0, 1, 0)
         page.BackgroundTransparency = 1
@@ -269,43 +256,39 @@ local function CreateUI()
         page.ScrollBarImageColor3 = COLORS.accent
         page.AutomaticCanvasSize = Enum.AutomaticSize.Y
         page.Parent = Pages
-        Instance.new("UIListLayout", page).Padding = UDim.new(0, 8)
+        
+        local pList = Instance.new("UIListLayout", page)
+        pList.Padding = UDim.new(0, 8)
+        pList.SortOrder = Enum.SortOrder.LayoutOrder
 
         btn.MouseButton1Click:Connect(function()
             for _, p in pairs(Pages:GetChildren()) do p.Visible = false end
-            for _, b in pairs(TabBar:GetChildren()) do 
-                if b:IsA("TextButton") then
-                    TweenService:Create(b, TweenInfo.new(0.3), {BackgroundTransparency = 1, TextColor3 = COLORS.textDim}):Play()
-                end
-            end
+            for _, b in pairs(TabContainer:GetChildren()) do if b:IsA("TextButton") then b.TextColor3 = COLORS.textDim end end
             page.Visible = true
-            TweenService:Create(btn, TweenInfo.new(0.3), {BackgroundTransparency = 0.2, TextColor3 = COLORS.text}):Play()
+            btn.TextColor3 = COLORS.accent
         end)
 
         return page, btn
     end
 
-    local pSteal, bSteal = CreateTab("Steal", "⚔️")
-    local pESP, bESP = CreateTab("ESP", "👁️")
-    local pBase, bBase = CreateTab("Base", "🏠")
-    local pConfig, bConfig = CreateTab("Config", "⚙️")
+    local pSteal, bSteal = CreateTab("Steal", "⚡")
+    local pTP, bTP = CreateTab("Teleport", "🚀")
+    local pVisuals, bVisuals = CreateTab("Visuals", "👁️")
+    local pAuto, bAuto = CreateTab("Automation", "⚙️")
+    local pCombat, bCombat = CreateTab("Combat", "⚔️")
+    local pSecurity, bSec = CreateTab("Security", "🛡️")
 
-    -- Default Active
-    pSteal.Visible = true
-    bSteal.BackgroundTransparency = 0.2
-    bSteal.TextColor3 = COLORS.text
-
-    -- Components
+    -- Shared UI Components
     local function AddToggle(parent, text, configKey, callback)
         local f = Instance.new("TextButton")
-        f.Size = UDim2.new(1, -10, 0, 45)
+        f.Size = UDim2.new(1, -5, 0, 48)
         f.BackgroundColor3 = COLORS.bgAccent
         f.Text = ""
         f.Parent = parent
-        Instance.new("UICorner", f).CornerRadius = UDim.new(0, 8)
+        Instance.new("UICorner", f).CornerRadius = UDim.new(0, 10)
         
         local lbl = Instance.new("TextLabel")
-        lbl.Size = UDim2.new(0.7, 0, 1, 0)
+        lbl.Size = UDim2.new(0.6, 0, 1, 0)
         lbl.Position = UDim2.new(0, 15, 0, 0)
         lbl.BackgroundTransparency = 1
         lbl.Text = text
@@ -316,15 +299,15 @@ local function CreateUI()
         lbl.Parent = f
 
         local tbg = Instance.new("Frame")
-        tbg.Size = UDim2.new(0, 44, 0, 24)
-        tbg.Position = UDim2.new(1, -59, 0.5, -12)
+        tbg.Size = UDim2.new(0, 42, 0, 22)
+        tbg.Position = UDim2.new(1, -57, 0.5, -11)
         tbg.BackgroundColor3 = InternalSystem.Parametres[configKey] and COLORS.accent or Color3.fromRGB(40, 40, 50)
         tbg.Parent = f
         Instance.new("UICorner", tbg).CornerRadius = UDim.new(1, 0)
 
         local dot = Instance.new("Frame")
-        dot.Size = UDim2.new(0, 18, 0, 18)
-        dot.Position = InternalSystem.Parametres[configKey] and UDim2.new(1, -21, 0.5, -9) or UDim2.new(0, 3, 0.5, -9)
+        dot.Size = UDim2.new(0, 16, 0, 16)
+        dot.Position = InternalSystem.Parametres[configKey] and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
         dot.BackgroundColor3 = Color3.new(1,1,1)
         dot.Parent = tbg
         Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
@@ -333,32 +316,52 @@ local function CreateUI()
             InternalSystem.Parametres[configKey] = not InternalSystem.Parametres[configKey]
             local state = InternalSystem.Parametres[configKey]
             TweenService:Create(tbg, TweenInfo.new(0.3), {BackgroundColor3 = state and COLORS.accent or Color3.fromRGB(40, 40, 50)}):Play()
-            TweenService:Create(dot, TweenInfo.new(0.3, Enum.EasingStyle.Back), {Position = state and UDim2.new(1, -21, 0.5, -9) or UDim2.new(0, 3, 0.5, -9)}):Play()
+            TweenService:Create(dot, TweenInfo.new(0.3, Enum.EasingStyle.Back), {Position = state and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)}):Play()
             if callback then callback(state) end
         end)
     end
 
-    local function AddSlider(parent, text, min, max, configKey)
-        local f = Instance.new("Frame")
-        f.Size = UDim2.new(1, -10, 0, 70)
-        f.BackgroundColor3 = COLORS.bgAccent
+    local function AddButton(parent, text, callback)
+        local f = Instance.new("TextButton")
+        f.Size = UDim2.new(1, -5, 0, 40)
+        f.BackgroundColor3 = COLORS.accent
+        f.BackgroundTransparency = 0.8
+        f.Text = text
+        f.TextColor3 = COLORS.text
+        f.Font = Enum.Font.GothamBold
+        f.TextSize = 13
         f.Parent = parent
         Instance.new("UICorner", f).CornerRadius = UDim.new(0, 8)
+        Instance.new("UIStroke", f).Color = COLORS.accent
+        
+        f.MouseButton1Click:Connect(function() 
+            f.BackgroundTransparency = 0.6
+            task.delay(0.1, function() f.BackgroundTransparency = 0.8 end)
+            if callback then callback() end 
+        end)
+    end
+
+    local function AddSlider(parent, text, min, max, configKey, callback)
+        local f = Instance.new("Frame")
+        f.Size = UDim2.new(1, -5, 0, 65)
+        f.BackgroundColor3 = COLORS.bgAccent
+        f.Parent = parent
+        Instance.new("UICorner", f).CornerRadius = UDim.new(0, 10)
 
         local lbl = Instance.new("TextLabel")
-        lbl.Size = UDim2.new(0.5, 0, 0, 30)
+        lbl.Size = UDim2.new(0.6, 0, 0, 30)
         lbl.Position = UDim2.new(0, 15, 0, 5)
         lbl.BackgroundTransparency = 1
         lbl.Text = text
-        lbl.TextColor3 = COLORS.text
-        lbl.Font = Enum.Font.GothamSemibold
-        lbl.TextSize = 13
+        lbl.TextColor3 = COLORS.textDim
+        lbl.Font = Enum.Font.GothamBold
+        lbl.TextSize = 12
         lbl.TextXAlignment = Enum.TextXAlignment.Left
         lbl.Parent = f
 
         local val = Instance.new("TextLabel")
-        val.Size = UDim2.new(0.4, 0, 0, 30)
-        val.Position = UDim2.new(0.6, -15, 0, 5)
+        val.Size = UDim2.new(0.3, 0, 0, 30)
+        val.Position = UDim2.new(0.7, -15, 0, 5)
         val.BackgroundTransparency = 1
         val.Text = tostring(InternalSystem.Parametres[configKey])
         val.TextColor3 = COLORS.accent2
@@ -370,22 +373,22 @@ local function CreateUI()
         local track = Instance.new("Frame")
         track.Size = UDim2.new(1, -30, 0, 6)
         track.Position = UDim2.new(0, 15, 0, 45)
-        track.BackgroundColor3 = Color3.fromRGB(30,30,40)
+        track.BackgroundColor3 = Color3.fromRGB(40,40,55)
         track.Parent = f
         Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
 
         local bar = Instance.new("Frame")
-        local pct = (InternalSystem.Parametres[configKey] - min) / (max - min)
+        local pct = math.clamp((InternalSystem.Parametres[configKey] - min) / (max - min), 0, 1)
         bar.Size = UDim2.new(pct, 0, 1, 0)
         bar.BackgroundColor3 = COLORS.accent
         bar.Parent = track
         Instance.new("UICorner", bar).CornerRadius = UDim.new(1, 0)
 
-        local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(1, 0, 1, 0)
-        btn.BackgroundTransparency = 1
-        btn.Text = ""
-        btn.Parent = f
+        local ctrl = Instance.new("TextButton")
+        ctrl.Size = UDim2.new(1, 0, 1, 0)
+        ctrl.BackgroundTransparency = 1
+        ctrl.Text = ""
+        ctrl.Parent = f
 
         local function update(input)
             local r = math.clamp((input.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
@@ -393,254 +396,172 @@ local function CreateUI()
             InternalSystem.Parametres[configKey] = v
             val.Text = tostring(v)
             bar.Size = UDim2.new(r, 0, 1, 0)
+            if callback then callback(v) end
         end
 
         local drag = false
-        btn.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then drag = true update(i) end end)
+        ctrl.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then drag = true update(i) end end)
         UserInputService.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then drag = false end end)
-        UserInputService.InputChanged:Connect(function(i) if drag and i.UserInputType == Enum.UserInputType.MouseMovement then update(i) end end)
+        UserInputService.InputChanged:Connect(function(i) if drag and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then update(i) end end)
     end
 
-    -- Fill Tabs
-    AddToggle(pSteal, "🟢 Master Auto-Grab", "AutoGrab_Actif")
-    AddToggle(pSteal, "🚶 Pathfinding Walk", "AutoWalk")
-    AddToggle(pSteal, "🤖 Anti-AFK Humanizer", "DebugMode")
-    AddSlider(pSteal, "📏 Grab Range", 5, 100, "GrabRange")
-    AddSlider(pSteal, "⏱️ Action Delay", 1, 5, "GrabDelay")
+    local function AddTextBox(parent, placeholder, configKey, callback)
+        local f = Instance.new("TextBox")
+        f.Size = UDim2.new(1, -5, 0, 40)
+        f.BackgroundColor3 = COLORS.bgAccent
+        f.Text = InternalSystem.Parametres[configKey] or ""
+        f.PlaceholderText = placeholder
+        f.TextColor3 = COLORS.text
+        f.PlaceholderColor3 = COLORS.textDim
+        f.Font = Enum.Font.GothamSemibold
+        f.TextSize = 13
+        f.Parent = parent
+        Instance.new("UICorner", f).CornerRadius = UDim.new(0, 8)
+        Instance.new("UIStroke", f).Color = Color3.fromRGB(50, 50, 70)
+        
+        f.FocusLost:Connect(function()
+            InternalSystem.Parametres[configKey] = f.Text
+            if callback then callback(f.Text) end
+        end)
+    end
 
-    AddToggle(pESP, "🕵️ Brainrot Highlights", "BrainrotESP")
-    AddToggle(pESP, "👤 Player Tracker", "PlayerESP")
-    AddToggle(pESP, "🏘️ Base Status ESP", "BaseTimerESP")
+    -- ====================== FILLING TABS ======================
+    
+    -- [⚡] STEAL TAB
+    AddToggle(pSteal, "⚡ Steal Highest Gen", "StealHighestGen")
+    AddToggle(pSteal, "💰 Steal Highest Value/Price", "StealHighestValue")
+    AddToggle(pSteal, "📍 Steal Nearest", "StealNearest")
+    AddToggle(pSteal, "🚶 Steal Walking/Carpet", "StealWalking")
+    AddToggle(pSteal, "🕳️ Floor Steal", "FloorSteal")
+    AddToggle(pSteal, "👻 Invisible During Steal", "InvisibleDuringSteal")
+    AddToggle(pSteal, "🔮 Predictive Steal", "PredictiveSteal")
+    AddToggle(pSteal, "🚀 Steal Speed Boost", "StealSpeedBoost")
+    AddToggle(pSteal, "🚪 Auto Unlock Base Door", "AutoUnlockBaseDoor")
+    AddToggle(pSteal, "🚫 Disable Steal Animation", "DisableStealAnimation")
+    AddSlider(pSteal, "📏 Grab Range", 5, 150, "GrabRange")
 
-    AddToggle(pBase, "🛡️ Shield Auto-Recall", "AutoRecall_Actif")
-    AddToggle(pBase, "🖱️ Base Auto-Clicker", "AutoClicker")
+    -- [🚀] TELEPORT TAB
+    AddButton(pTP, "🛰️ Stable TP System", function() print("STABLE TP") end)
+    AddToggle(pTP, "🔄 Body Swap TP", "BodySwapTP")
+    AddToggle(pTP, "TP Highest Gen", "TPHighestGen")
+    AddToggle(pTP, "TP Highest Value", "TPHighestValue")
+    AddToggle(pTP, "Auto-TP on Start", "TPAutoStart")
+    AddToggle(pTP, "Continuous Auto TP", "ContinuousAutoTP")
+    AddToggle(pTP, "Auto Clone After TP", "AutoCloneTP")
+    AddToggle(pTP, "Goto Brainrot After TP", "GotoBrainrotTP")
+    AddToggle(pTP, "Return to Brainrot", "AutoReturnBrainrot")
+    AddToggle(pTP, "Infinite Jump", "InfiniteJump")
+    AddButton(pTP, "💨 Speed Boost (Mode Cycle)", function() print("SPEED CYCLE") end)
+    AddToggle(pTP, "🛑 Anti-Ragdoll V1", "AntiRagdollV1")
+    AddToggle(pTP, "🛡️ Anti-Ragdoll V2", "AntiRagdollV2")
+    AddButton(pTP, "💥 Self Ragdoll", function() print("RAGDOLL") end)
+    AddButton(pTP, "👥 Spawn Clone", function() print("CLONE") end)
+    AddButton(pTP, "🔄 Rejoin Server", function() TeleportService:Teleport(game.PlaceId, LocalPlayer) end)
 
-    AddToggle(pConfig, "🌐 Server Hop (Staff)", "ServerHopStaff")
-    AddToggle(pConfig, "🔮 Visual Aura", "AfficherCercle")
+    -- [👁️] VISUALS TAB
+    AddToggle(pVisuals, "🧠 Brainrot ESP", "BrainrotESP")
+    AddToggle(pVisuals, "👤 Player ESP", "PlayerESP")
+    AddToggle(pVisuals, "⏰ Timer ESP (Bases)", "TimerESP")
+    AddToggle(pVisuals, "🌈 Rainbow Base", "RainbowBase")
+    AddToggle(pVisuals, "🔦 Target Brainrot Beam", "TargetBeam")
+    AddToggle(pVisuals, "🩻 Xray Base", "XrayBase")
+    AddToggle(pVisuals, "📊 Steal Progress Bar", "ShowProgressBar")
 
-    -- Interaction Overlay (Bottom Bar)
-    local Overlay = Instance.new("Frame")
-    Overlay.Size = UDim2.new(0, 320, 0, 50)
-    Overlay.Position = UDim2.new(0.5, -160, 1, -100)
-    Overlay.BackgroundColor3 = COLORS.bg
-    Overlay.Parent = Gui
-    Instance.new("UICorner", Overlay).CornerRadius = UDim.new(0, 12)
-    Instance.new("UIStroke", Overlay).Color = COLORS.bgAccent
+    -- [⚙️] AUTOMATION TAB
+    AddSlider(pAuto, "📐 GUI Scale", 0.5, 2, "GUIScale", function(v) Gui.UIScale.Scale = v end)
+    local scaleVal = Instance.new("UIScale", Main)
+    scaleVal.Scale = InternalSystem.Parametres.GUIScale
+    AddToggle(pAuto, "🔔 Notifications & Alerts", "NotificationsEnabled")
+    AddToggle(pAuto, "🔒 Lock GUI Position", "LockGUIPos")
+    AddButton(pAuto, "🔗 Join by Job ID", function() print("JOB ID JOIN") end)
+    AddToggle(pAuto, "⏳ Brainrot Timer GUI", "BrainrotTimerGUI")
+    AddButton(pAuto, "🔓 Unlock/Lock Base Buttons", function() print("LOCK BUTTONS") end)
+    AddToggle(pAuto, "🙈 Auto-Hide GUI", "AutoHideGUI")
+    AddButton(pAuto, "⌨️ Keybind Manager (8 Binds)", function() print("KEYBINDS") end)
+    AddSlider(pAuto, "📉 Min Gen (TP) Config", 0, 10000, "MinGenConfig")
+    AddToggle(pAuto, "🧬 Mutation & Trait Filters", "FiltersEnabled")
+    AddToggle(pAuto, "⭐ Favorites Priority", "FavoritePriority")
+    AddToggle(pAuto, "🛠️ Instant Cloner", "InstantCloner")
+    AddTextBox(pAuto, "🔍 Search Brainrot...", "SearchQuery")
+    AddButton(pAuto, "📡 Plot/Base Scanner", function() print("SCAN") end)
+    AddToggle(pAuto, "📦 Player Items Panel", "ItemsPanel")
+    AddButton(pAuto, "🛑 Kick Self", function() LocalPlayer:Kick("User Kick Request") end)
 
-    local oStatus = Instance.new("TextLabel")
-    oStatus.Size = UDim2.new(1, -20, 0, 20)
-    oStatus.Position = UDim2.new(0, 10, 0, 8)
-    oStatus.BackgroundTransparency = 1
-    oStatus.Text = "SYSTEM STANDBY"
-    oStatus.TextColor3 = COLORS.textDim
-    oStatus.Font = Enum.Font.GothamBold
-    oStatus.TextSize = 12
-    oStatus.Parent = Overlay
+    -- [⚔️] COMBAT TAB
+    AddToggle(pCombat, "🔫 Auto-Destroy Turret", "AutoDestroyTurret")
+    AddButton(pCombat, "🔴 Laser Aimbot (Cycle)", function() print("LASER CYCLE") end)
+    AddButton(pCombat, "🎨 Paintball Aimbot (Cycle)", function() print("PAINTBALL CYCLE") end)
+    AddToggle(pCombat, "🎯 Aimbot Items GUI", "AimbotItemsGUI")
+    AddToggle(pCombat, "🌊 Event God Mode (Tsunami)", "EventGodMode")
+    AddToggle(pCombat, "🏆 Event Auto-Steal & ESP", "EventAutoSteal")
+    AddToggle(pCombat, "🌾 Event Auto-Farm", "EventAutoFarm")
+    AddSlider(pCombat, "🚜 Auto-Farm Min Gen", 0, 1000, "AutoFarmMinGen")
+    AddToggle(pCombat, "👢 Auto-Kick After Steal", "AutoKickAfterSteal")
 
-    local oBarBg = Instance.new("Frame")
-    oBarBg.Size = UDim2.new(1, -20, 0, 6)
-    oBarBg.Position = UDim2.new(0, 10, 0, 32)
-    oBarBg.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
-    oBarBg.Parent = Overlay
-    Instance.new("UICorner", oBarBg).CornerRadius = UDim.new(1, 0)
+    -- [🛡️] SECURITY TAB
+    AddToggle(pSecurity, "🛡️ Anti-Cheat Bypass", "AntiCheatBypass")
+    AddToggle(pSecurity, "⏩ Loading Screen Bypass", "LoadingScreenBypass")
+    AddToggle(pSecurity, "🔥 Tryhard Mode (No Effects)", "TryhardMode")
+    AddToggle(pSecurity, "🔋 Tuff Optimizer", "TuffOptimizer")
+    AddToggle(pSecurity, "🚀 Anti-Lag", "AntiLag")
+    AddToggle(pSecurity, "🐝 Anti-Bee & Disco", "AntiBeeDisco")
+    AddToggle(pSecurity, "🚫 Disable Server Full Error", "DisableServerFull")
 
-    local oBar = Instance.new("Frame")
-    oBar.Size = UDim2.new(0, 0, 1, 0)
-    oBar.BackgroundColor3 = COLORS.accent
-    oBar.Parent = oBarBg
-    Instance.new("UICorner", oBar).CornerRadius = UDim.new(1, 0)
+    -- Dragging Logic
+    MakeDraggable(Main, Header)
 
-    -- Toggle Logic
+    -- Status Bar (Bottom)
+    local StatusFrame = Instance.new("Frame")
+    StatusFrame.Size = UDim2.new(1, -40, 0, 40)
+    StatusFrame.Position = UDim2.new(0, 20, 1, -55)
+    StatusFrame.BackgroundColor3 = COLORS.bgAccent
+    StatusFrame.Parent = Main
+    Instance.new("UICorner", StatusFrame).CornerRadius = UDim.new(0, 8)
+    
+    local sLabel = Instance.new("TextLabel")
+    sLabel.Size = UDim2.new(1, -20, 1, 0)
+    sLabel.Position = UDim2.new(0, 10, 0, 0)
+    sLabel.BackgroundTransparency = 1
+    sLabel.Text = "STATUS: IDLE • v11.0 MASSIVE"
+    sLabel.TextColor3 = COLORS.textDim
+    sLabel.Font = Enum.Font.GothamBold
+    sLabel.TextSize = 10
+    sLabel.TextXAlignment = Enum.TextXAlignment.Left
+    sLabel.Parent = StatusFrame
+
+    local pBarBg = Instance.new("Frame")
+    pBarBg.Size = UDim2.new(1, -20, 0, 4)
+    pBarBg.Position = UDim2.new(0, 10, 1, -12)
+    pBarBg.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+    pBarBg.Parent = StatusFrame
+    Instance.new("UICorner", pBarBg).CornerRadius = UDim.new(1, 0)
+    
+    local pBar = Instance.new("Frame")
+    pBar.Size = UDim2.new(0, 0, 1, 0)
+    pBar.BackgroundColor3 = COLORS.accent
+    pBar.Parent = pBarBg
+    Instance.new("UICorner", pBar).CornerRadius = UDim.new(1, 0)
+
+    -- Interaction Logic
     local open = false
     Toggle.MouseButton1Click:Connect(function()
         open = not open
         Main.Visible = true
-        TweenService:Create(Main, TweenInfo.new(0.4, Enum.EasingStyle.Cubic), {GroupTransparency = open and 0 or 1}):Play()
-        TweenService:Create(Toggle, TweenInfo.new(0.4), {Rotation = open and 45 or 0, TextColor3 = open and COLORS.danger or COLORS.accent}):Play()
-        if not open then task.delay(0.4, function() if not open then Main.Visible = false end end) end
+        TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Quart), {GroupTransparency = open and 0 or 1}):Play()
+        TweenService:Create(Toggle, TweenInfo.new(0.5), {Rotation = open and 90 or 0, BackgroundColor3 = open and COLORS.danger or COLORS.bgAccent}):Play()
+        if not open then task.delay(0.5, function() if not open then Main.Visible = false end end) end
     end)
-    Close.MouseButton1Click:Connect(function() open = false TweenService:Create(Main, TweenInfo.new(0.4), {GroupTransparency = 1}):Play() task.delay(0.4, function() Main.Visible = false end) end)
+    CloseBtn.MouseButton1Click:Connect(function() open = false TweenService:Create(Main, TweenInfo.new(0.5), {GroupTransparency = 1}):Play() task.delay(0.5, function() Main.Visible = false end) end)
 
-    return {Status = oStatus, Progress = oBar}
+    bSteal.TextColor3 = COLORS.accent
+    pSteal.Visible = true
+
+    return {Status = sLabel, Progress = pBar}
 end
 
 local HUD = CreateUI()
 
--- ====================== LOGIQUE DE JEU (MOTEUR V10) ======================
+-- ====================== [LOGIQUE INTERNE PLACEHOLDER] ======================
+-- Note: Les fonctions réelles seront ajoutées dans les étapes suivantes comme demandé.
 
-local function GetClosestPlot(onlyMine)
-    for _, plot in pairs(DossierPlots:GetChildren()) do
-        local ownerVal = plot:FindFirstChild("Owner") or plot:FindFirstChild("PlotOwner")
-        local isMine = ownerVal and (ownerVal.Value == LocalPlayer or ownerVal.Value == LocalPlayer.Name)
-        if onlyMine then if isMine then return plot end else if not isMine then return plot end end
-    end
-end
-
--- AUTO CLIQUER (MINE)
-task.spawn(function()
-    while true do
-        if InternalSystem.Parametres.AutoClicker then
-            local mine = GetClosestPlot(true)
-            if mine then
-                for _, btn in pairs(mine:GetDescendants()) do
-                    if btn:IsA("ProximityPrompt") and btn.Enabled then
-                        local at = btn.ActionText:lower()
-                        if at:find("claim") or at:find("collect") or at:find("upgrade") then
-                            fireproximityprompt(btn)
-                        end
-                    end
-                end
-            end
-        end
-        task.wait(1)
-    end
-end)
-
--- AUTO GRAB ENGINE
-local isGrabbing = false
-RunService.Heartbeat:Connect(function()
-    if not InternalSystem.Parametres.AutoGrab_Actif or isGrabbing then return end
-    
-    local char = LocalPlayer.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-
-    -- Check if already carrying
-    if LocalPlayer:GetAttribute("Stealing") then 
-        HUD.Status.Text = "🧠 CARRYING BRAINROT"
-        HUD.Status.TextColor3 = COLORS.success
-        return 
-    end
-
-    local bestTarget, bestVal, bestDist = nil, -1, math.huge
-    local range = InternalSystem.Parametres.GrabRange
-
-    for _, plot in pairs(DossierPlots:GetChildren()) do
-        -- Skip mine
-        local o = plot:FindFirstChild("PlotOwner") or plot:FindFirstChild("Owner")
-        if o and (o.Value == LocalPlayer or o.Value == LocalPlayer.Name) then continue end
-
-        for _, d in pairs(plot:GetDescendants()) do
-            if d:IsA("ProximityPrompt") and d.Enabled then
-                local act = d.ActionText:lower()
-                if act:find("unlock") or act:find("toggle") then continue end
-                
-                local pos = ObtenirPositionPrompt(d)
-                if not pos then continue end
-                local dist = (root.Position - pos).Magnitude
-                if dist > range then continue end
-                if not EstVisible(pos, d.Parent) then continue end
-
-                -- Evaluation
-                local val = 1
-                local overhead = d.Parent:FindFirstChild("AnimalOverhead") or d.Parent.Parent:FindFirstChild("AnimalOverhead")
-                if overhead and overhead:FindFirstChild("DisplayName") then
-                    local name = overhead.DisplayName.Text
-                    if InternalSystem.Heros[name] then val = InternalSystem.Heros[name].ValeurNum end
-                end
-
-                if InternalSystem.Parametres.GrabMode == "Highest" then
-                    if val > bestVal then bestVal = val; bestDist = dist; bestTarget = d end
-                else
-                    if dist < bestDist then bestVal = val; bestDist = dist; bestTarget = d end
-                end
-            end
-        end
-    end
-
-    if bestTarget then
-        isGrabbing = true
-        HUD.Status.Text = "⚡ STEALING..."
-        HUD.Status.TextColor3 = COLORS.warning
-        
-        -- Pathfinding if far
-        if InternalSystem.Parametres.AutoWalk and bestDist > 8 then
-            local path = PathfindingService:CreatePath({AgentRadius = 3})
-            path:ComputeAsync(root.Position, ObtenirPositionPrompt(bestTarget))
-            if path.Status == Enum.PathStatus.Success then
-                for _, w in pairs(path:GetWaypoints()) do
-                    LocalPlayer.Character.Humanoid:MoveTo(w.Position)
-                    if w.Action == Enum.PathWaypointAction.Jump then LocalPlayer.Character.Humanoid.Jump = true end
-                    task.wait(0.1)
-                end
-            end
-        end
-
-        local hold = bestTarget.HoldDuration
-        local duration = math.max(hold, InternalSystem.Parametres.GrabDelay)
-        
-        local start = tick()
-        local conn
-        conn = RunService.RenderStepped:Connect(function()
-            local elapsed = tick() - start
-            local pct = math.clamp(elapsed / duration, 0, 1)
-            HUD.Progress.Size = UDim2.new(pct, 0, 1, 0)
-            if pct >= 1 then conn:Disconnect() end
-        end)
-
-        fireproximityprompt(bestTarget)
-        task.wait(duration + 0.2)
-        
-        HUD.Progress.Size = UDim2.new(0, 0, 1, 0)
-        isGrabbing = false
-    else
-        HUD.Status.Text = "🔍 SCANNING AREA..."
-        HUD.Status.TextColor3 = COLORS.textDim
-    end
-end)
-
--- AURA VISUELLE
-local Aura = Instance.new("Part")
-Aura.Shape = Enum.PartType.Cylinder
-Aura.Material = Enum.Material.Neon
-Aura.Transparency = 0.8
-Aura.Anchored = true
-Aura.CanCollide = false
-Aura.CastShadow = false
-
-RunService.RenderStepped:Connect(function()
-    local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if InternalSystem.Parametres.AfficherCercle and root then
-        local r = InternalSystem.Parametres.GrabRange * 2
-        Aura.Size = Vector3.new(0.1, r, r)
-        Aura.CFrame = root.CFrame * CFrame.new(0, -2.8, 0) * CFrame.Angles(0, 0, math.rad(90))
-        Aura.Color = InternalSystem.Parametres.AutoGrab_Actif and COLORS.accent or COLORS.textDim
-        Aura.Parent = Workspace
-    else
-        Aura.Parent = nil
-    end
-end)
-
--- HIGHLIGHT ESP
-local HighFolder = Instance.new("Folder", CoreGui)
-HighFolder.Name = "V10_Highlights"
-
-task.spawn(function()
-    while true do
-        if InternalSystem.Parametres.BrainrotESP then
-            for _, plot in pairs(DossierPlots:GetChildren()) do
-                for _, m in pairs(plot:GetDescendants()) do
-                    if m:IsA("Model") and InternalSystem.Heros[m.Name] then
-                        if not m:FindFirstChild("Highlight") then
-                            local h = Instance.new("Highlight", m)
-                            h.FillColor = COLORS.accent
-                            h.OutlineColor = COLORS.accent2
-                            h.FillTransparency = 0.5
-                        end
-                    end
-                end
-            end
-        else
-            HighFolder:ClearAllChildren()
-            for _, plot in pairs(DossierPlots:GetChildren()) do
-                for _, m in pairs(plot:GetDescendants()) do
-                    local h = m:FindFirstChild("Highlight")
-                    if h then h:Destroy() end
-                end
-            end
-        end
-        task.wait(2)
-    end
-end)
-
-Log("Internal System v10.0 SUPERIOR Loaded Successfully.")
+print("Internal System v11.0 MASSIVE - Loaded Successfully")
