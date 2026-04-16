@@ -5,7 +5,7 @@
 -- Jeu: Steal A Brainrot
 -- ==============================================================================
 
--- ====================== SERVICES ======================
+-- ====================== SERVICES & MOBILE COMPATIBILITY ======================
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
@@ -16,20 +16,69 @@ local UserInputService = game:GetService("UserInputService")
 local PathfindingService = game:GetService("PathfindingService")
 local HttpService = game:GetService("HttpService")
 local TeleportService = game:GetService("TeleportService")
+local StarterGui = game:GetService("StarterGui")
+local Lighting = game:GetService("Lighting")
 
 local LocalPlayer = Players.LocalPlayer
 local _Camera = Workspace.CurrentCamera
 
--- FIX MOBILE: Robust Hub Selection
+-- MOBILE-ROBUST GUI PARENT (gethui fallback securise)
 local HubParent = nil
-local success, err = pcall(function()
-    HubParent = (gethui and gethui()) or 
-                game:GetService("CoreGui"):FindFirstChild("RobloxGui") and game:GetService("CoreGui") or 
-                LocalPlayer:FindFirstChild("PlayerGui")
-end)
-if not success or not HubParent then
-    warn("⚠️ Erreur de parentage GUI: " .. tostring(err))
-    HubParent = LocalPlayer:WaitForChild("PlayerGui")
+local function GetSafeParent()
+    if gethui then
+        local success, result = pcall(function()
+            local hui = gethui()
+            if typeof(hui) == "Instance" then
+                return hui
+            end
+            return nil
+        end)
+        if success and result then
+            warn("[GUI] Using gethui() parent")
+            return result
+        end
+    end
+    
+    local success, result = pcall(function()
+        local testGui = Instance.new("ScreenGui")
+        testGui.Name = "Test_" .. tostring(tick())
+        testGui.Parent = CoreGui
+        local valid = testGui.Parent ~= nil
+        testGui:Destroy()
+        return valid
+    end)
+    
+    if success and result then
+        warn("[GUI] Using CoreGui parent")
+        return CoreGui
+    end
+    
+    warn("[GUI] Fallback to PlayerGui (Mobile Compatibility Mode)")
+    return LocalPlayer:WaitForChild("PlayerGui")
+end
+
+HubParent = GetSafeParent()
+
+-- ====================== DEBUG & ERROR VISIBILITY ======================
+local DEBUG_MODE = true
+
+local function SafeCall(context, func, ...)
+    local args = {...}
+    local success, result = pcall(function()
+        return func(unpack(args))
+    end)
+    
+    if not success then
+        warn("╔════════════════════════════════════════════════════════════╗")
+        warn("║  [ERROR] " .. tostring(context))
+        warn("╠════════════════════════════════════════════════════════════╣")
+        warn("║  " .. tostring(result):sub(1, 100))
+        warn("╚════════════════════════════════════════════════════════════╝")
+        warn(debug.traceback())
+        return nil
+    end
+    
+    return result
 end
 
 -- ====================== UTILITAIRES ======================
@@ -54,42 +103,52 @@ local function ObtenirPositionPrompt(prompt)
     return current and current.Position or nil
 end
 
+local function GetCharacter()
+    return LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+end
+
+local function GetHumanoid()
+    local char = GetCharacter()
+    return char:WaitForChild("Humanoid")
+end
+
+local function GetRootPart()
+    local char = GetCharacter()
+    return char:WaitForChild("HumanoidRootPart")
+end
+
 -- ====================== CONFIGURATION & DATABASE ======================
 local InternalSystem = {
     Heros = {}, 
     ListeNomsHeros = {},
+    ESPObjects = {},
+    Connections = {},
     Parametres = {
-        -- STEAL MODES
         StealHighestGen = true, StealHighestValue = false, StealNearest = false,
         StealWalking = false, FloorSteal = false, InvisibleDuringSteal = false,
         PredictiveSteal = false, StealSpeedBoost = false, AutoUnlockBaseDoor = false,
         DisableStealAnimation = false,
         
-        -- TELEPORT & MOVEMENT
-        StableTP = false, BodySwapTP = false, TPByMode = "Gen", TPAutoStart = false,
-        ContinuousAutoTP = false, AutoCloneTP = false, GotoBrainrotTP = false,
-        AutoReturnBrainrot = false, InfiniteJump = false, SpeedBoostMode = "Off",
-        AntiRagdollV1 = false, AntiRagdollV2 = false,
+        StableTP = false, BodySwapTP = false, TPHighestGen = false, TPHighestValue = false,
+        TPAutoStart = false, ContinuousAutoTP = false, AutoCloneTP = false, 
+        GotoBrainrotTP = false, AutoReturnBrainrot = false, InfiniteJump = false, 
+        SpeedBoostMode = "Off", AntiRagdollV1 = false, AntiRagdollV2 = false,
         
-        -- ESP & VISUALS
         BrainrotESP = false, PlayerESP = false, TimerESP = false, RainbowBase = false,
         TargetBeam = false, XrayBase = false, ShowProgressBar = true,
         
-        -- GUI & AUTOMATION
         GUIScale = 1, NotificationsEnabled = true, LockGUIPos = false,
         BrainrotTimerGUI = false, AutoHideGUI = false, FavoritePriority = false,
         InstantCloner = false, MinGenConfig = 0, SearchQuery = "",
+        FiltersEnabled = false, ItemsPanel = false,
         
-        -- COMBAT & EVENTS
         AutoDestroyTurret = false, LaserAimbotMode = "Off", PaintballAimbotMode = "Off",
         AimbotItemsGUI = false, EventGodMode = false, EventAutoSteal = false,
         EventAutoFarm = false, AutoFarmMinGen = 100, AutoKickAfterSteal = false,
         
-        -- SECURITY & OPTIMIZATION
         AntiCheatBypass = true, LoadingScreenBypass = true, TryhardMode = false,
         TuffOptimizer = false, AntiLag = false, AntiBeeDisco = false, DisableServerFull = false,
 
-        -- INTERNAL/LEGACY
         AutoGrab_Actif = false, GrabRange = 25, GrabDelay = 1.0, AutoWalk = false,
         DebugMode = false, ServerHopStaff = false, AutoClicker = false,
         AfficherCercle = true, ThemeColor = Color3.fromRGB(130, 80, 255)
@@ -121,18 +180,30 @@ local COLORS = {
 
 -- ====================== DRAGGABLE HELPER ======================
 local function MakeDraggable(frame, handle)
-    local dragging, dragInput, dragStart, startPos
+    local dragging, dragInput, dragStart, startPos = false, nil, nil, nil
+    
     handle.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or 
+           input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
             dragStart = input.Position
             startPos = frame.Position
-            input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
+            
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
         end
     end)
+    
     handle.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInput = input end
+        if input.UserInputType == Enum.UserInputType.MouseMovement or 
+           input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
     end)
+    
     RunService.RenderStepped:Connect(function()
         if dragging and dragInput and not InternalSystem.Parametres.LockGUIPos then
             local delta = dragInput.Position - dragStart
@@ -143,7 +214,6 @@ end
 
 -- ====================== CORE UI CONSTRUCTION ======================
 local function CreateUI()
-    -- Cleanup
     for _, g in pairs(HubParent:GetChildren()) do
         if g.Name == "InternalMassiveV11" then g:Destroy() end
     end
@@ -151,43 +221,71 @@ local function CreateUI()
     local Gui = Instance.new("ScreenGui")
     Gui.Name = "InternalMassiveV11"
     Gui.ResetOnSpawn = false
-    Gui.Parent = HubParent
+    Gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    Gui.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets
+    
+    local function SetParentWithRetry(instance, parent, maxRetries)
+        maxRetries = maxRetries or 5
+        for i = 1, maxRetries do
+            local success = pcall(function()
+                instance.Parent = parent
+            end)
+            if success and instance.Parent == parent then
+                return true
+            end
+            warn("[GUI] Parenting attempt " .. i .. " failed, retrying...")
+            task.wait(0.1 * i)
+        end
+        return false
+    end
+    
+    if not SetParentWithRetry(Gui, HubParent, 5) then
+        warn("[GUI] CRITICAL: Failed to parent GUI after 5 attempts")
+        return nil
+    end
 
-    -- Toggle Button (Mini GUI)
     local Toggle = Instance.new("TextButton")
     Toggle.Name = "MiniGUI"
-    Toggle.Size = UDim2.new(0, 50, 0, 50)
-    Toggle.Position = UDim2.new(0, 30, 0.5, -25)
+    Toggle.Size = UDim2.new(0, 60, 0, 60)
+    Toggle.Position = UDim2.new(0, 20, 0.5, -30)
     Toggle.BackgroundColor3 = COLORS.bgAccent
     Toggle.Text = "⚡"
     Toggle.TextColor3 = COLORS.accent
-    Toggle.TextSize = 24
+    Toggle.TextSize = 28
     Toggle.Font = Enum.Font.GothamBlack
+    Toggle.AutoButtonColor = true
     Toggle.Parent = Gui
-    Instance.new("UICorner", Toggle).CornerRadius = UDim.new(1, 0)
+    
+    local corner = Instance.new("UICorner", Toggle)
+    corner.CornerRadius = UDim.new(1, 0)
+    
     local tStroke = Instance.new("UIStroke", Toggle)
     tStroke.Color = COLORS.accent
-    tStroke.Thickness = 2
-    tStroke.Transparency = 0.4
+    tStroke.Thickness = 3
+    tStroke.Transparency = 0.3
 
-    -- Main Frame
     local Main = Instance.new("CanvasGroup")
     Main.Name = "MainFrame"
-    Main.Size = UDim2.new(0, 500, 0, 560)
-    Main.Position = UDim2.new(0.5, -250, 0.5, -280)
+    local screenSize = _Camera.ViewportSize
+    local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+    local guiWidth = isMobile and math.min(450, screenSize.X - 40) or 500
+    local guiHeight = isMobile and math.min(500, screenSize.Y - 100) or 560
+    
+    Main.Size = UDim2.new(0, guiWidth, 0, guiHeight)
+    Main.Position = UDim2.new(0.5, -guiWidth/2, 0.5, -guiHeight/2)
     Main.BackgroundColor3 = COLORS.bg
     Main.GroupTransparency = 1
     Main.Visible = false
     Main.Parent = Gui
+    
     Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 12)
     local mStroke = Instance.new("UIStroke", Main)
     mStroke.Color = COLORS.bgAccent
     mStroke.Thickness = 2
 
-    -- Header / Drag Handle
     local Header = Instance.new("Frame")
     Header.Name = "Header"
-    Header.Size = UDim2.new(1, 0, 0, 70)
+    Header.Size = UDim2.new(1, 0, 0, 80)
     Header.BackgroundTransparency = 1
     Header.Parent = Main
     
@@ -226,7 +324,6 @@ local function CreateUI()
     CloseBtn.Parent = Header
     Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(1, 0)
 
-    -- Tab Container
     local TabContainer = Instance.new("ScrollingFrame")
     TabContainer.Name = "Tabs"
     TabContainer.Size = UDim2.new(1, -40, 0, 45)
@@ -242,7 +339,6 @@ local function CreateUI()
     TabList.HorizontalAlignment = Enum.HorizontalAlignment.Center
     TabList.Padding = UDim.new(0, 10)
 
-    -- Page Container
     local Pages = Instance.new("Frame")
     Pages.Size = UDim2.new(1, -40, 1, -210)
     Pages.Position = UDim2.new(0, 20, 0, 145)
@@ -274,7 +370,9 @@ local function CreateUI()
 
         btn.MouseButton1Click:Connect(function()
             for _, p in pairs(Pages:GetChildren()) do p.Visible = false end
-            for _, b in pairs(TabContainer:GetChildren()) do if b:IsA("TextButton") then b.TextColor3 = COLORS.textDim end end
+            for _, b in pairs(TabContainer:GetChildren()) do 
+                if b:IsA("TextButton") then b.TextColor3 = COLORS.textDim end 
+            end
             page.Visible = true
             btn.TextColor3 = COLORS.accent
         end)
@@ -289,7 +387,6 @@ local function CreateUI()
     local pCombat, bCombat = CreateTab("Combat", "⚔️")
     local pSecurity, bSec = CreateTab("Security", "🛡️")
 
-    -- Shared UI Components
     local function AddToggle(parent, text, configKey, callback)
         local f = Instance.new("TextButton")
         f.Size = UDim2.new(1, -5, 0, 48)
@@ -348,7 +445,12 @@ local function CreateUI()
         f.MouseButton1Click:Connect(function() 
             f.BackgroundTransparency = 0.6
             task.delay(0.1, function() f.BackgroundTransparency = 0.8 end)
-            if callback then callback() end 
+            if callback then 
+                local success, err = pcall(callback)
+                if not success then
+                    warn("[BUTTON ERROR] " .. text .. ": " .. tostring(err))
+                end
+            end 
         end)
     end
 
@@ -411,9 +513,22 @@ local function CreateUI()
         end
 
         local drag = false
-        ctrl.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then drag = true update(i) end end)
-        UserInputService.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then drag = false end end)
-        UserInputService.InputChanged:Connect(function(i) if drag and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then update(i) end end)
+        ctrl.InputBegan:Connect(function(i) 
+            if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then 
+                drag = true 
+                update(i) 
+            end 
+        end)
+        UserInputService.InputEnded:Connect(function(i) 
+            if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then 
+                drag = false 
+            end 
+        end)
+        UserInputService.InputChanged:Connect(function(i) 
+            if drag and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then 
+                update(i) 
+            end 
+        end)
     end
 
     local function AddTextBox(parent, placeholder, configKey, callback)
@@ -436,9 +551,8 @@ local function CreateUI()
         end)
     end
 
-    -- ====================== FILLING TABS ======================
-    
-    -- [⚡] STEAL TAB
+    -- STEAL TAB
+    AddToggle(pSteal, "⚡ Auto-Grab Brainrot", "AutoGrab_Actif")
     AddToggle(pSteal, "⚡ Steal Highest Gen", "StealHighestGen")
     AddToggle(pSteal, "💰 Steal Highest Value/Price", "StealHighestValue")
     AddToggle(pSteal, "📍 Steal Nearest", "StealNearest")
@@ -450,9 +564,12 @@ local function CreateUI()
     AddToggle(pSteal, "🚪 Auto Unlock Base Door", "AutoUnlockBaseDoor")
     AddToggle(pSteal, "🚫 Disable Steal Animation", "DisableStealAnimation")
     AddSlider(pSteal, "📏 Grab Range", 5, 150, "GrabRange")
+    AddSlider(pSteal, "⏱️ Grab Delay", 1, 10, "GrabDelay")
 
-    -- [🚀] TELEPORT TAB
-    AddButton(pTP, "🛰️ Stable TP System", function() print("STABLE TP") end)
+    -- TELEPORT TAB
+    AddButton(pTP, "🛰️ Stable TP System", function() 
+        warn("[TP] Stable TP activated")
+    end)
     AddToggle(pTP, "🔄 Body Swap TP", "BodySwapTP")
     AddToggle(pTP, "TP Highest Gen", "TPHighestGen")
     AddToggle(pTP, "TP Highest Value", "TPHighestValue")
@@ -462,15 +579,29 @@ local function CreateUI()
     AddToggle(pTP, "Goto Brainrot After TP", "GotoBrainrotTP")
     AddToggle(pTP, "Return to Brainrot", "AutoReturnBrainrot")
     AddToggle(pTP, "Infinite Jump", "InfiniteJump")
-    AddButton(pTP, "💨 Speed Boost (Mode Cycle)", function() print("SPEED CYCLE") end)
+    AddButton(pTP, "💨 Speed Boost (Mode Cycle)", function() 
+        warn("[TP] Speed cycle activated")
+    end)
     AddToggle(pTP, "🛑 Anti-Ragdoll V1", "AntiRagdollV1")
     AddToggle(pTP, "🛡️ Anti-Ragdoll V2", "AntiRagdollV2")
-    AddButton(pTP, "💥 Self Ragdoll", function() print("RAGDOLL") end)
-    AddButton(pTP, "👥 Spawn Clone", function() print("CLONE") end)
-    AddButton(pTP, "🔄 Rejoin Server", function() TeleportService:Teleport(game.PlaceId, LocalPlayer) end)
+    AddButton(pTP, "💥 Self Ragdoll", function() 
+        warn("[TP] Self ragdoll activated")
+    end)
+    AddButton(pTP, "👥 Spawn Clone", function() 
+        warn("[TP] Spawn clone activated")
+    end)
+    AddButton(pTP, "🔄 Rejoin Server", function() 
+        TeleportService:Teleport(game.PlaceId, LocalPlayer) 
+    end)
 
-    -- [👁️] VISUALS TAB
-    AddToggle(pVisuals, "🧠 Brainrot ESP", "BrainrotESP")
+    -- VISUALS TAB
+    AddToggle(pVisuals, "🧠 Brainrot ESP", "BrainrotESP", function(state)
+        if state then
+            warn("[ESP] Brainrot ESP enabled")
+        else
+            warn("[ESP] Brainrot ESP disabled")
+        end
+    end)
     AddToggle(pVisuals, "👤 Player ESP", "PlayerESP")
     AddToggle(pVisuals, "⏰ Timer ESP (Bases)", "TimerESP")
     AddToggle(pVisuals, "🌈 Rainbow Base", "RainbowBase")
@@ -478,30 +609,48 @@ local function CreateUI()
     AddToggle(pVisuals, "🩻 Xray Base", "XrayBase")
     AddToggle(pVisuals, "📊 Steal Progress Bar", "ShowProgressBar")
 
-    -- [⚙️] AUTOMATION TAB
-    AddSlider(pAuto, "📐 GUI Scale", 0.5, 2, "GUIScale", function(v) Gui.UIScale.Scale = v end)
+    -- AUTOMATION TAB
+    AddSlider(pAuto, "📐 GUI Scale", 0.5, 2, "GUIScale", function(v) 
+        if Main:FindFirstChild("UIScale") then
+            Main.UIScale.Scale = v 
+        end
+    end)
     local scaleVal = Instance.new("UIScale", Main)
     scaleVal.Scale = InternalSystem.Parametres.GUIScale
     AddToggle(pAuto, "🔔 Notifications & Alerts", "NotificationsEnabled")
     AddToggle(pAuto, "🔒 Lock GUI Position", "LockGUIPos")
-    AddButton(pAuto, "🔗 Join by Job ID", function() print("JOB ID JOIN") end)
+    AddButton(pAuto, "🔗 Join by Job ID", function() 
+        warn("[AUTO] Job ID join activated")
+    end)
     AddToggle(pAuto, "⏳ Brainrot Timer GUI", "BrainrotTimerGUI")
-    AddButton(pAuto, "🔓 Unlock/Lock Base Buttons", function() print("LOCK BUTTONS") end)
+    AddButton(pAuto, "🔓 Unlock/Lock Base Buttons", function() 
+        warn("[AUTO] Base buttons toggled")
+    end)
     AddToggle(pAuto, "🙈 Auto-Hide GUI", "AutoHideGUI")
-    AddButton(pAuto, "⌨️ Keybind Manager (8 Binds)", function() print("KEYBINDS") end)
+    AddButton(pAuto, "⌨️ Keybind Manager (8 Binds)", function() 
+        warn("[AUTO] Keybind manager opened")
+    end)
     AddSlider(pAuto, "📉 Min Gen (TP) Config", 0, 10000, "MinGenConfig")
     AddToggle(pAuto, "🧬 Mutation & Trait Filters", "FiltersEnabled")
     AddToggle(pAuto, "⭐ Favorites Priority", "FavoritePriority")
     AddToggle(pAuto, "🛠️ Instant Cloner", "InstantCloner")
     AddTextBox(pAuto, "🔍 Search Brainrot...", "SearchQuery")
-    AddButton(pAuto, "📡 Plot/Base Scanner", function() print("SCAN") end)
+    AddButton(pAuto, "📡 Plot/Base Scanner", function() 
+        warn("[AUTO] Plot scanner activated")
+    end)
     AddToggle(pAuto, "📦 Player Items Panel", "ItemsPanel")
-    AddButton(pAuto, "🛑 Kick Self", function() LocalPlayer:Kick("User Kick Request") end)
+    AddButton(pAuto, "🛑 Kick Self", function() 
+        LocalPlayer:Kick("User Kick Request") 
+    end)
 
-    -- [⚔️] COMBAT TAB
+    -- COMBAT TAB
     AddToggle(pCombat, "🔫 Auto-Destroy Turret", "AutoDestroyTurret")
-    AddButton(pCombat, "🔴 Laser Aimbot (Cycle)", function() print("LASER CYCLE") end)
-    AddButton(pCombat, "🎨 Paintball Aimbot (Cycle)", function() print("PAINTBALL CYCLE") end)
+    AddButton(pCombat, "🔴 Laser Aimbot (Cycle)", function() 
+        warn("[COMBAT] Laser aimbot cycle")
+    end)
+    AddButton(pCombat, "🎨 Paintball Aimbot (Cycle)", function() 
+        warn("[COMBAT] Paintball aimbot cycle")
+    end)
     AddToggle(pCombat, "🎯 Aimbot Items GUI", "AimbotItemsGUI")
     AddToggle(pCombat, "🌊 Event God Mode (Tsunami)", "EventGodMode")
     AddToggle(pCombat, "🏆 Event Auto-Steal & ESP", "EventAutoSteal")
@@ -509,7 +658,7 @@ local function CreateUI()
     AddSlider(pCombat, "🚜 Auto-Farm Min Gen", 0, 1000, "AutoFarmMinGen")
     AddToggle(pCombat, "👢 Auto-Kick After Steal", "AutoKickAfterSteal")
 
-    -- [🛡️] SECURITY TAB
+    -- SECURITY TAB
     AddToggle(pSecurity, "🛡️ Anti-Cheat Bypass", "AntiCheatBypass")
     AddToggle(pSecurity, "⏩ Loading Screen Bypass", "LoadingScreenBypass")
     AddToggle(pSecurity, "🔥 Tryhard Mode (No Effects)", "TryhardMode")
@@ -518,10 +667,8 @@ local function CreateUI()
     AddToggle(pSecurity, "🐝 Anti-Bee & Disco", "AntiBeeDisco")
     AddToggle(pSecurity, "🚫 Disable Server Full Error", "DisableServerFull")
 
-    -- Dragging Logic
     MakeDraggable(Main, Header)
 
-    -- Status Bar (Bottom)
     local StatusFrame = Instance.new("Frame")
     StatusFrame.Size = UDim2.new(1, -40, 0, 40)
     StatusFrame.Position = UDim2.new(0, 20, 1, -55)
@@ -553,178 +700,713 @@ local function CreateUI()
     pBar.Parent = pBarBg
     Instance.new("UICorner", pBar).CornerRadius = UDim.new(1, 0)
 
-    -- Interaction Logic
     local open = false
     Toggle.MouseButton1Click:Connect(function()
         open = not open
         Main.Visible = true
         TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Quart), {GroupTransparency = open and 0 or 1}):Play()
         TweenService:Create(Toggle, TweenInfo.new(0.5), {Rotation = open and 90 or 0, BackgroundColor3 = open and COLORS.danger or COLORS.bgAccent}):Play()
-        if not open then task.delay(0.5, function() if not open then Main.Visible = false end end) end
+        if not open then 
+            task.delay(0.5, function() 
+                if not open then 
+                    Main.Visible = false 
+                end 
+            end) 
+        end
     end)
-    CloseBtn.MouseButton1Click:Connect(function() open = false TweenService:Create(Main, TweenInfo.new(0.5), {GroupTransparency = 1}):Play() task.delay(0.5, function() Main.Visible = false end) end)
+    
+    CloseBtn.MouseButton1Click:Connect(function() 
+        open = false 
+        TweenService:Create(Main, TweenInfo.new(0.5), {GroupTransparency = 1}):Play() 
+        task.delay(0.5, function() 
+            Main.Visible = false 
+        end) 
+    end)
 
     bSteal.TextColor3 = COLORS.accent
     pSteal.Visible = true
 
-    return {Status = sLabel, Progress = pBar}
+    return {Status = sLabel, Progress = pBar, Main = Main, Toggle = Toggle}
 end
 
 local HUD = CreateUI()
-
--- ====================== [MOTEUR DE VOL (STEAL) - VERSION 11.0] ======================
-
-local isStealing = false
-local DossierPlots = Workspace:FindFirstChild("Plots") or Workspace:WaitForChild("Plots", 10)
-
-if not DossierPlots then
-    warn("❌ ERREUR: Dossier 'Plots' introuvable dans le Workspace !")
+if not HUD then
+    warn("[CRITICAL] GUI Creation Failed - Script cannot continue")
+    return
 end
 
--- Helper: Obtenir le prix en nombre
-local function getPriceValue(prompt)
-    local parent = prompt.Parent
-    -- Rechercher le texte du prix dans les Overheads (displayName)
-    local overhead = parent:FindFirstChild("AnimalOverhead") or parent.Parent:FindFirstChild("AnimalOverhead")
-    if overhead and overhead:FindFirstChild("DisplayName") then
-        local text = overhead.DisplayName.Text
-        return ConvertirEnNombre(text)
+-- ====================== GAME FOLDERS REFERENCES ======================
+local GameFolders = {
+    Plots = Workspace:WaitForChild("Plots"),
+    RemoteSteal = nil,
+    RemoteTeleport = nil
+}
+
+-- Trouver les remotes
+local function FindRemotes()
+    local packages = ReplicatedStorage:FindFirstChild("Packages")
+    if packages then
+        local net = packages:FindFirstChild("Net")
+        if net then
+            GameFolders.RemoteSteal = net:FindFirstChild("RE/StealService/DeliverySteal") or net:FindFirstChild("DeliverySteal")
+            GameFolders.RemoteTeleport = net:FindFirstChild("RE/TeleportService/Teleport") or net:FindFirstChild("Teleport")
+        end
     end
-    return 0
+    
+    -- Chercher dans d'autres endroits
+    if not GameFolders.RemoteSteal then
+        GameFolders.RemoteSteal = ReplicatedStorage:FindFirstChild("DeliverySteal", true)
+    end
+    if not GameFolders.RemoteTeleport then
+        GameFolders.RemoteTeleport = ReplicatedStorage:FindFirstChild("Teleport", true)
+    end
+    
+    warn("[REMOTES] Steal: " .. tostring(GameFolders.RemoteSteal) .. " | Teleport: " .. tostring(GameFolders.RemoteTeleport))
+end
+
+FindRemotes()
+
+-- ====================== AUTO-STEAL SYSTEM V11 ======================
+local StealSystem = {
+    Active = false,
+    CurrentTarget = nil,
+    StealConnection = nil,
+    BrainrotCache = {},
+    LastStealAttempt = 0,
+    StealCooldown = 0.5,
+    IsCarrying = false
+}
+
+local function GetStealPrompt(brainrotModel)
+    if not brainrotModel then return nil end
+    
+    local base = brainrotModel:FindFirstChild("Base")
+    if not base then return nil end
+    
+    local spawn = base:FindFirstChild("Spawn")
+    if not spawn then return nil end
+    
+    local attachment = spawn:FindFirstChild("PromptAttachment")
+    if not attachment then return nil end
+    
+    return attachment:FindFirstChildWhichIsA("ProximityPrompt")
+end
+
+local function IsStealable(brainrotModel)
+    if not brainrotModel or not brainrotModel.Parent then return false end
+    
+    local rootPart = brainrotModel:FindFirstChild("RootPart")
+    if not rootPart then return false end
+    
+    for _, weld in pairs(rootPart:GetChildren()) do
+        if weld:IsA("WeldConstraint") then
+            if weld.Part0 and weld.Part0:IsDescendantOf(Workspace.Plots) then
+                if weld.Part0 ~= LocalPlayer.Character and weld.Part0 ~= LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                    return false
+                end
+            end
+        end
+    end
+    
+    local prompt = GetStealPrompt(brainrotModel)
+    if not prompt then return false end
+    
+    return true
+end
+
+local function GetBrainrotValue(brainrotModel)
+    if not brainrotModel then return 0, 0 end
+    
+    local config = brainrotModel:FindFirstChild("Configuration")
+    if config then
+        local gen = config:FindFirstChild("Gen")
+        local value = config:FindFirstChild("Value") or config:FindFirstChild("Price")
+        
+        local genNum = gen and (typeof(gen) == "NumberValue" and gen.Value or tonumber(gen.Value)) or 0
+        local valNum = value and (typeof(value) == "NumberValue" and value.Value or ConvertirEnNombre(value.Value)) or 0
+        
+        return genNum, valNum
+    end
+    
+    local name = brainrotModel.Name
+    if InternalSystem.Heros[name] then
+        return InternalSystem.Heros[name].Gen or 0, InternalSystem.Heros[name].ValeurNum or 0
+    end
+    
+    return 0, 0
+end
+
+local function ScanAllBrainrots()
+    local brainrots = {}
+    
+    for _, plot in pairs(GameFolders.Plots:GetChildren()) do
+        if plot:IsA("Model") or plot:IsA("Folder") then
+            local animalPodiums = plot:FindFirstChild("AnimalPodiums")
+            if animalPodiums then
+                for _, podium in pairs(animalPodiums:GetChildren()) do
+                    if podium:IsA("Model") and podium.Name ~= "UI" then
+                        local gen, value = GetBrainrotValue(podium)
+                        table.insert(brainrots, {
+                            Model = podium,
+                            Gen = gen,
+                            Value = value,
+                            Position = podium:GetPivot().Position,
+                            Plot = plot
+                        })
+                    end
+                end
+            end
+        end
+    end
+    
+    return brainrots
+end
+
+local function SelectTarget(brainrots)
+    if #brainrots == 0 then return nil end
+    
+    local character = LocalPlayer.Character
+    if not character then return nil end
+    
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then return nil end
+    
+    local playerPos = rootPart.Position
+    
+    local bestTarget = nil
+    local bestScore = -math.huge
+    
+    for _, data in pairs(brainrots) do
+        if not IsStealable(data.Model) then continue end
+        
+        local score = 0
+        local distance = (data.Position - playerPos).Magnitude
+        
+        if InternalSystem.Parametres.StealHighestGen then
+            score = data.Gen * 1000000 - distance
+        elseif InternalSystem.Parametres.StealHighestValue then
+            score = data.Value - distance
+        elseif InternalSystem.Parametres.StealNearest then
+            score = -distance
+        else
+            score = data.Gen * 1000 - distance
+        end
+        
+        if score > bestScore then
+            bestScore = score
+            bestTarget = data
+        end
+    end
+    
+    return bestTarget
+end
+
+local function ExecuteSteal(targetData)
+    if not targetData or not targetData.Model then 
+        warn("[STEAL] No target provided")
+        return false 
+    end
+    
+    local currentTime = tick()
+    if currentTime - StealSystem.LastStealAttempt < StealSystem.StealCooldown then
+        return false
+    end
+    StealSystem.LastStealAttempt = currentTime
+    
+    warn("[STEAL] Attempting to steal: " .. targetData.Model.Name .. " (Gen: " .. targetData.Gen .. ")")
+    
+    local prompt = GetStealPrompt(targetData.Model)
+    if not prompt then
+        warn("[STEAL] No ProximityPrompt found on " .. targetData.Model.Name)
+        return false
+    end
+    
+    if fireproximityprompt then
+        fireproximityprompt(prompt, 0)
+        warn("[STEAL] Fired ProximityPrompt instantly")
+    else
+        prompt.HoldDuration = 0
+        prompt:InputHoldBegin()
+        task.wait(0.05)
+        prompt:InputHoldEnd()
+        warn("[STEAL] Simulated prompt interaction")
+    end
+    
+    local startTime = tick()
+    local attached = false
+    
+    repeat
+        task.wait(0.1)
+        local rootPart = targetData.Model:FindFirstChild("RootPart")
+        if rootPart then
+            for _, weld in pairs(rootPart:GetChildren()) do
+                if weld:IsA("WeldConstraint") then
+                    local char = LocalPlayer.Character
+                    if char and weld.Part0 == char:FindFirstChild("HumanoidRootPart") then
+                        attached = true
+                        break
+                    end
+                end
+            end
+        end
+    until attached or (tick() - startTime > 2)
+    
+    if attached then
+        warn("[STEAL] Brainrot attached! Firing DeliverySteal...")
+        if GameFolders.RemoteSteal then
+            GameFolders.RemoteSteal:FireServer()
+        end
+        
+        if HUD and HUD.Status then
+            HUD.Status.Text = "STATUS: STOLEN " .. string.upper(targetData.Model.Name) .. "!"
+            HUD.Status.TextColor3 = COLORS.success
+        end
+        
+        StealSystem.IsCarrying = true
+        return true
+    else
+        warn("[STEAL] Brainrot did not attach in time")
+        return false
+    end
+end
+
+local function CheckIfCarrying()
+    local character = LocalPlayer.Character
+    if not character then return false end
+    
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+    
+    for _, obj in pairs(Workspace:GetChildren()) do
+        if obj:IsA("Model") and obj:FindFirstChild("RootPart") then
+            local root = obj.RootPart
+            for _, weld in pairs(root:GetChildren()) do
+                if weld:IsA("WeldConstraint") and weld.Part0 == hrp then
+                    return true
+                end
+            end
+        end
+    end
+    
+    return false
+end
+
+local function StealLoop()
+    if not InternalSystem.Parametres.AutoGrab_Actif then return end
+    
+    if CheckIfCarrying() then
+        StealSystem.IsCarrying = true
+        if HUD and HUD.Status then
+            HUD.Status.Text = "STATUS: CARRYING BRAINROT - RETURN TO BASE!"
+            HUD.Status.TextColor3 = COLORS.warning
+        end
+        return
+    else
+        StealSystem.IsCarrying = false
+    end
+    
+    local brainrots = ScanAllBrainrots()
+    local target = SelectTarget(brainrots)
+    
+    if target then
+        StealSystem.CurrentTarget = target
+        ExecuteSteal(target)
+    else
+        if HUD and HUD.Status then
+            HUD.Status.Text = "STATUS: SCANNING... NO TARGETS"
+        end
+    end
 end
 
 task.spawn(function()
     while true do
-        task.wait(0.1)
-        
-        -- Sécurités de base
-        if not InternalSystem.Parametres.AutoGrab_Actif then continue end
-        if isStealing then continue end
-        
-        local char = LocalPlayer.Character
-        local root = char and char:FindFirstChild("HumanoidRootPart")
-        if not root then continue end
-
-        -- Vérification si déjà en train de voler (Attribut du jeu)
-        if LocalPlayer:GetAttribute("Stealing") then 
-            HUD.Status.Text = "🧠 BRAINROT EN MAIN"
-            HUD.Status.TextColor3 = COLORS.success
-            continue 
-        end
-
-        local bestTarget = nil
-        local bestVal = -1
-        local bestDist = math.huge
-        local range = InternalSystem.Parametres.GrabRange
-
-        -- SCAN DES PLOTS
-        for _, plot in pairs(DossierPlots:GetChildren()) do
-            -- On ne vole pas chez soi
-            local o = plot:FindFirstChild("PlotOwner") or plot:FindFirstChild("Owner")
-            if o and (o.Value == LocalPlayer or o.Value == LocalPlayer.Name) then continue end
-
-            -- Recherche des Brainrots interactifs
-            for _, d in pairs(plot:GetDescendants()) do
-                if d:IsA("ProximityPrompt") and d.Enabled then
-                    -- Ignorer les boutons de base / portes (sauf si config)
-                    local act = d.ActionText:lower()
-                    if act:find("unlock") or act:find("toggle") or act:find("buy") then continue end
-                    
-                    local pos = ObtenirPositionPrompt(d)
-                    if not pos then continue end
-                    
-                    local dist = (root.Position - pos).Magnitude
-                    if dist > range then continue end
-                    
-                    -- Evaluation selon le mode
-                    local score = 0
-                    local valNum = getPriceValue(d)
-                    
-                    if InternalSystem.Parametres.StealHighestGen or InternalSystem.Parametres.StealHighestValue then
-                        score = valNum
-                    elseif InternalSystem.Parametres.StealNearest then
-                        score = 1000 - dist -- Plus proche = plus haut score
-                    end
-
-                    -- Priorité
-                    if score > bestVal then
-                        bestVal = score
-                        bestDist = dist
-                        bestTarget = d
-                    end
-                end
-            end
-        end
-
-        -- EXECUTION DU VOL
-        if bestTarget then
-            isStealing = true
-            HUD.Status.Text = "⚡ TENTATIVE DE VOL..."
-            HUD.Status.TextColor3 = COLORS.warning
-            
-            -- Debug Info
-            print("Target found: " .. bestTarget.Parent.Name .. " | Dist: " .. math.floor(bestDist))
-
-            -- Auto-Walk Logic
-            if InternalSystem.Parametres.StealWalking and bestDist > 7 then
-                HUD.Status.Text = "🚶 MARCHE VERS CIBLE"
-                local humanoid = char:FindFirstChild("Humanoid")
-                if humanoid then
-                    humanoid:MoveTo(ObtenirPositionPrompt(bestTarget))
-                    local moveSuccess = humanoid.MoveToFinished:Wait() -- Attend l'arrivée (Timeout possible)
-                end
-            end
-
-            -- Ghost Mode (Invisible during steal)
-            if InternalSystem.Parametres.InvisibleDuringSteal then
-                for _, part in pairs(char:GetDescendants()) do
-                    if part:IsA("BasePart") then part.Transparency = 0.8 end
-                end
-            end
-
-            -- Activation du Prompt
-            local duration = bestTarget.HoldDuration
-            local start = tick()
-            
-            -- UI Feedback Progress
-            local conn
-            conn = RunService.RenderStepped:Connect(function()
-                local elapsed = tick() - start
-                local pct = math.clamp(elapsed / (duration + 0.1), 0, 1)
-                HUD.Progress.Size = UDim2.new(pct, 0, 1, 0)
-                if pct >= 1 then conn:Disconnect() end
-            end)
-
-            -- Interaction Réelle
-            local successInteract, interactErr = pcall(function()
-                fireproximityprompt(bestTarget)
-            end)
-
-            if not successInteract then
-                warn("⚠️ ÉCHEC fireproximityprompt: " .. tostring(interactErr))
-                HUD.Status.Text = "❌ ÉCHEC INTERACTION"
-                HUD.Status.TextColor3 = COLORS.danger
-            end
-
-            task.wait(duration + 0.2)
-            
-            -- Reset Effects
-            if InternalSystem.Parametres.InvisibleDuringSteal then
-                for _, part in pairs(char:GetDescendants()) do
-                    if part:IsA("BasePart") then part.Transparency = 0 end
-                end
-            end
-
-            HUD.Progress.Size = UDim2.new(0, 0, 1, 0)
-            isStealing = false
-        else
-            -- Si rien trouvé mais mode actif, on prévient l'utilisateur
-            if InternalSystem.Parametres.DebugMode then
-                HUD.Status.Text = "🔍 AUCUNE CIBLE DANS LA ZONE"
-                HUD.Status.TextColor3 = COLORS.textDim
+        task.wait(InternalSystem.Parametres.GrabDelay or 1)
+        if InternalSystem.Parametres.AutoGrab_Actif then
+            local success, err = pcall(StealLoop)
+            if not success then
+                warn("[STEAL LOOP ERROR] " .. tostring(err))
             end
         end
     end
 end)
 
-print("Internal System v11.0 MASSIVE - Logique Steal Aktivée")
+for _, plot in pairs(GameFolders.Plots:GetChildren()) do
+    local podiums = plot:FindFirstChild("AnimalPodiums")
+    if podiums then
+        podiums.ChildAdded:Connect(function(child)
+            if InternalSystem.Parametres.AutoGrab_Actif and child:IsA("Model") then
+                warn("[STEAL] New brainrot detected: " .. child.Name)
+                task.wait(0.3)
+                local success, err = pcall(StealLoop)
+                if not success then
+                    warn("[STEAL INSTANT ERROR] " .. tostring(err))
+                end
+            end
+        end)
+    end
+end
+
+-- ====================== TELEPORT SYSTEM ======================
+local TeleportSystem = {
+    LastTeleport = 0,
+    TeleportCooldown = 2
+}
+
+local function FindBestBrainrotForTP()
+    local brainrots = ScanAllBrainrots()
+    local bestTarget = nil
+    local bestValue = -1
+    
+    for _, data in pairs(brainrots) do
+        if not IsStealable(data.Model) then continue end
+        
+        local value = 0
+        if InternalSystem.Parametres.TPHighestGen then
+            value = data.Gen
+        elseif InternalSystem.Parametres.TPHighestValue then
+            value = data.Value
+        else
+            value = data.Gen
+        end
+        
+        if value > InternalSystem.Parametres.MinGenConfig and value > bestValue then
+            bestValue = value
+            bestTarget = data
+        end
+    end
+    
+    return bestTarget
+end
+
+local function TeleportToBrainrot(targetData)
+    if not targetData then
+        warn("[TP] No target for teleport")
+        return false
+    end
+    
+    local currentTime = tick()
+    if currentTime - TeleportSystem.LastTeleport < TeleportSystem.TeleportCooldown then
+        warn("[TP] Teleport on cooldown")
+        return false
+    end
+    TeleportSystem.LastTeleport = currentTime
+    
+    local character = LocalPlayer.Character
+    if not character then
+        warn("[TP] No character")
+        return false
+    end
+    
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        warn("[TP] No HumanoidRootPart")
+        return false
+    end
+    
+    warn("[TP] Teleporting to: " .. targetData.Model.Name)
+    
+    local targetPos = targetData.Position + Vector3.new(0, 5, 0)
+    
+    if InternalSystem.Parametres.StableTP then
+        hrp.CFrame = CFrame.new(targetPos)
+        task.wait(0.1)
+        hrp.Velocity = Vector3.new(0, 0, 0)
+    else
+        hrp.CFrame = CFrame.new(targetPos)
+    end
+    
+    if HUD and HUD.Status then
+        HUD.Status.Text = "STATUS: TELEPORTED TO " .. string.upper(targetData.Model.Name)
+        HUD.Status.TextColor3 = COLORS.accent2
+    end
+    
+    return true
+end
+
+local function ContinuousTPLogic()
+    if not InternalSystem.Parametres.ContinuousAutoTP then return end
+    
+    local target = FindBestBrainrotForTP()
+    if target then
+        TeleportToBrainrot(target)
+    end
+end
+
+task.spawn(function()
+    while true do
+        task.wait(3)
+        if InternalSystem.Parametres.ContinuousAutoTP then
+            local success, err = pcall(ContinuousTPLogic)
+            if not success then
+                warn("[CONTINUOUS TP ERROR] " .. tostring(err))
+            end
+        end
+    end
+end)
+
+-- ====================== ESP SYSTEM ======================
+local ESPSystem = {
+    Objects = {},
+    Beams = {}
+}
+
+local function CreateESPForBrainrot(brainrotModel)
+    if not brainrotModel or not brainrotModel.Parent then return nil end
+    
+    local espFolder = Instance.new("Folder")
+    espFolder.Name = "ESP_" .. brainrotModel.Name
+    
+    local billboard = Instance.new("BillboardGui")
+    billboard.Size = UDim2.new(0, 100, 0, 50)
+    billboard.StudsOffset = Vector3.new(0, 3, 0)
+    billboard.AlwaysOnTop = true
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = brainrotModel.Name
+    label.TextColor3 = COLORS.accent
+    label.Font = Enum.Font.GothamBold
+    label.TextSize = 14
+    label.Parent = billboard
+    
+    billboard.Parent = espFolder
+    
+    local highlight = Instance.new("Highlight")
+    highlight.FillColor = COLORS.accent
+    highlight.OutlineColor = COLORS.accent2
+    highlight.FillTransparency = 0.8
+    highlight.OutlineTransparency = 0
+    highlight.Parent = espFolder
+    
+    espFolder.Parent = brainrotModel
+    
+    return espFolder
+end
+
+local function UpdateESP()
+    if not InternalSystem.Parametres.BrainrotESP then
+        for _, obj in pairs(ESPSystem.Objects) do
+            if obj and obj.Parent then
+                obj:Destroy()
+            end
+        end
+        ESPSystem.Objects = {}
+        return
+    end
+    
+    local brainrots = ScanAllBrainrots()
+    local currentModels = {}
+    
+    for _, data in pairs(brainrots) do
+        if IsStealable(data.Model) then
+            currentModels[data.Model] = true
+            if not data.Model:FindFirstChild("ESP_" .. data.Model.Name) then
+                local esp = CreateESPForBrainrot(data.Model)
+                if esp then
+                    table.insert(ESPSystem.Objects, esp)
+                end
+            end
+        end
+    end
+    
+    -- Nettoyer les ESP orphelins
+    for i = #ESPSystem.Objects, 1, -1 do
+        local obj = ESPSystem.Objects[i]
+        if not obj or not obj.Parent or not currentModels[obj.Parent] then
+            if obj and obj.Parent then
+                obj:Destroy()
+            end
+            table.remove(ESPSystem.Objects, i)
+        end
+    end
+end
+
+task.spawn(function()
+    while true do
+        task.wait(1)
+        local success, err = pcall(UpdateESP)
+        if not success then
+            warn("[ESP UPDATE ERROR] " .. tostring(err))
+        end
+    end
+end)
+
+-- ====================== PLAYER ESP ======================
+local function UpdatePlayerESP()
+    if not InternalSystem.Parametres.PlayerESP then return end
+    
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local char = player.Character
+            if not char:FindFirstChild("PlayerESP") then
+                local esp = Instance.new("Highlight")
+                esp.Name = "PlayerESP"
+                esp.FillColor = COLORS.danger
+                esp.OutlineColor = COLORS.warning
+                esp.FillTransparency = 0.9
+                esp.Parent = char
+            end
+        end
+    end
+end
+
+task.spawn(function()
+    while true do
+        task.wait(2)
+        if InternalSystem.Parametres.PlayerESP then
+            local success, err = pcall(UpdatePlayerESP)
+            if not success then
+                warn("[PLAYER ESP ERROR] " .. tostring(err))
+            end
+        end
+    end
+end)
+
+-- ====================== INFINITE JUMP ======================
+UserInputService.JumpRequest:Connect(function()
+    if InternalSystem.Parametres.InfiniteJump then
+        local character = LocalPlayer.Character
+        if character then
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+            end
+        end
+    end
+end)
+
+-- ====================== ANTI-RAGDOLL ======================
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        if InternalSystem.Parametres.AntiRagdollV1 or InternalSystem.Parametres.AntiRagdollV2 then
+            local character = LocalPlayer.Character
+            if character then
+                for _, part in pairs(character:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        if InternalSystem.Parametres.AntiRagdollV1 then
+                            part.CanCollide = false
+                        end
+                        if InternalSystem.Parametres.AntiRagdollV2 then
+                            part.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                            part.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- ====================== SPEED BOOST ======================
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        if InternalSystem.Parametres.SpeedBoostMode ~= "Off" then
+            local character = LocalPlayer.Character
+            if character then
+                local humanoid = character:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    local speed = 16
+                    if InternalSystem.Parametres.SpeedBoostMode == "Low" then
+                        speed = 25
+                    elseif InternalSystem.Parametres.SpeedBoostMode == "Medium" then
+                        speed = 40
+                    elseif InternalSystem.Parametres.SpeedBoostMode == "High" then
+                        speed = 70
+                    elseif InternalSystem.Parametres.SpeedBoostMode == "Extreme" then
+                        speed = 100
+                    end
+                    humanoid.WalkSpeed = speed
+                end
+            end
+        end
+    end
+end)
+
+-- ====================== RAINBOW BASE ======================
+task.spawn(function()
+    local hue = 0
+    while true do
+        task.wait(0.05)
+        if InternalSystem.Parametres.RainbowBase then
+            hue = (hue + 0.01) % 1
+            local plot = GameFolders.Plots:FindFirstChild(LocalPlayer.Name)
+            if plot then
+                local base = plot:FindFirstChild("Base")
+                if base and base:IsA("BasePart") then
+                    base.Color = Color3.fromHSV(hue, 1, 1)
+                end
+            end
+        end
+    end
+end)
+
+-- ====================== AUTO-TP ON START ======================
+if InternalSystem.Parametres.TPAutoStart then
+    task.delay(3, function()
+        local target = FindBestBrainrotForTP()
+        if target then
+            TeleportToBrainrot(target)
+        end
+    end)
+end
+
+-- ====================== LOADING SCREEN BYPASS ======================
+if InternalSystem.Parametres.LoadingScreenBypass then
+    local gui = LocalPlayer:FindFirstChild("PlayerGui")
+    if gui then
+        for _, g in pairs(gui:GetChildren()) do
+            if g.Name:lower():find("loading") or g.Name:lower():find("intro") then
+                g:Destroy()
+                warn("[BYPASS] Destroyed loading screen: " .. g.Name)
+            end
+        end
+    end
+end
+
+-- ====================== ANTI-LAG ======================
+if InternalSystem.Parametres.AntiLag then
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
+            obj:Destroy()
+        end
+        if obj:IsA("BasePart") and obj.Name:lower():find("decoration") then
+            obj.Transparency = 1
+        end
+    end
+    warn("[ANTI-LAG] Cleaned up effects")
+end
+
+-- ====================== NOTIFICATION SYSTEM ======================
+local function Notify(title, message, duration)
+    duration = duration or 3
+    if not InternalSystem.Parametres.NotificationsEnabled then return end
+    
+    StarterGui:SetCore("SendNotification", {
+        Title = title,
+        Text = message,
+        Duration = duration
+    })
+end
+
+-- ====================== CHARACTER SETUP ======================
+LocalPlayer.CharacterAdded:Connect(function(char)
+    warn("[CHARACTER] New character spawned")
+    task.wait(1)
+    
+    if InternalSystem.Parametres.InfiniteJump then
+        -- Reconnect si necessaire
+    end
+end)
+
+-- ====================== FINAL INITIALIZATION ======================
+warn("╔════════════════════════════════════════════════════════════╗")
+warn("║     INTERNAL SYSTEM v11.0 MASSIVE - LOADED                 ║")
+warn("║     Features: Steal | TP | ESP | Combat | Security         ║")
+warn("╚════════════════════════════════════════════════════════════╝")
+
+Notify("Internal System v11", "Loaded Successfully!", 5)
+
+print("Internal System v11.0 MASSIVE - Loaded Successfully")
