@@ -19,7 +19,18 @@ local TeleportService = game:GetService("TeleportService")
 
 local LocalPlayer = Players.LocalPlayer
 local _Camera = Workspace.CurrentCamera
-local HubParent = (gethui and gethui()) or CoreGui
+
+-- FIX MOBILE: Robust Hub Selection
+local HubParent = nil
+local success, err = pcall(function()
+    HubParent = (gethui and gethui()) or 
+                game:GetService("CoreGui"):FindFirstChild("RobloxGui") and game:GetService("CoreGui") or 
+                LocalPlayer:FindFirstChild("PlayerGui")
+end)
+if not success or not HubParent then
+    warn("⚠️ Erreur de parentage GUI: " .. tostring(err))
+    HubParent = LocalPlayer:WaitForChild("PlayerGui")
+end
 
 -- ====================== UTILITAIRES ======================
 local function ConvertirEnNombre(valeur)
@@ -561,7 +572,159 @@ end
 
 local HUD = CreateUI()
 
--- ====================== [LOGIQUE INTERNE PLACEHOLDER] ======================
--- Note: Les fonctions réelles seront ajoutées dans les étapes suivantes comme demandé.
+-- ====================== [MOTEUR DE VOL (STEAL) - VERSION 11.0] ======================
 
-print("Internal System v11.0 MASSIVE - Loaded Successfully")
+local isStealing = false
+local DossierPlots = Workspace:FindFirstChild("Plots") or Workspace:WaitForChild("Plots", 10)
+
+if not DossierPlots then
+    warn("❌ ERREUR: Dossier 'Plots' introuvable dans le Workspace !")
+end
+
+-- Helper: Obtenir le prix en nombre
+local function getPriceValue(prompt)
+    local parent = prompt.Parent
+    -- Rechercher le texte du prix dans les Overheads (displayName)
+    local overhead = parent:FindFirstChild("AnimalOverhead") or parent.Parent:FindFirstChild("AnimalOverhead")
+    if overhead and overhead:FindFirstChild("DisplayName") then
+        local text = overhead.DisplayName.Text
+        return ConvertirEnNombre(text)
+    end
+    return 0
+end
+
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        
+        -- Sécurités de base
+        if not InternalSystem.Parametres.AutoGrab_Actif then continue end
+        if isStealing then continue end
+        
+        local char = LocalPlayer.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if not root then continue end
+
+        -- Vérification si déjà en train de voler (Attribut du jeu)
+        if LocalPlayer:GetAttribute("Stealing") then 
+            HUD.Status.Text = "🧠 BRAINROT EN MAIN"
+            HUD.Status.TextColor3 = COLORS.success
+            continue 
+        end
+
+        local bestTarget = nil
+        local bestVal = -1
+        local bestDist = math.huge
+        local range = InternalSystem.Parametres.GrabRange
+
+        -- SCAN DES PLOTS
+        for _, plot in pairs(DossierPlots:GetChildren()) do
+            -- On ne vole pas chez soi
+            local o = plot:FindFirstChild("PlotOwner") or plot:FindFirstChild("Owner")
+            if o and (o.Value == LocalPlayer or o.Value == LocalPlayer.Name) then continue end
+
+            -- Recherche des Brainrots interactifs
+            for _, d in pairs(plot:GetDescendants()) do
+                if d:IsA("ProximityPrompt") and d.Enabled then
+                    -- Ignorer les boutons de base / portes (sauf si config)
+                    local act = d.ActionText:lower()
+                    if act:find("unlock") or act:find("toggle") or act:find("buy") then continue end
+                    
+                    local pos = ObtenirPositionPrompt(d)
+                    if not pos then continue end
+                    
+                    local dist = (root.Position - pos).Magnitude
+                    if dist > range then continue end
+                    
+                    -- Evaluation selon le mode
+                    local score = 0
+                    local valNum = getPriceValue(d)
+                    
+                    if InternalSystem.Parametres.StealHighestGen or InternalSystem.Parametres.StealHighestValue then
+                        score = valNum
+                    elseif InternalSystem.Parametres.StealNearest then
+                        score = 1000 - dist -- Plus proche = plus haut score
+                    end
+
+                    -- Priorité
+                    if score > bestVal then
+                        bestVal = score
+                        bestDist = dist
+                        bestTarget = d
+                    end
+                end
+            end
+        end
+
+        -- EXECUTION DU VOL
+        if bestTarget then
+            isStealing = true
+            HUD.Status.Text = "⚡ TENTATIVE DE VOL..."
+            HUD.Status.TextColor3 = COLORS.warning
+            
+            -- Debug Info
+            print("Target found: " .. bestTarget.Parent.Name .. " | Dist: " .. math.floor(bestDist))
+
+            -- Auto-Walk Logic
+            if InternalSystem.Parametres.StealWalking and bestDist > 7 then
+                HUD.Status.Text = "🚶 MARCHE VERS CIBLE"
+                local humanoid = char:FindFirstChild("Humanoid")
+                if humanoid then
+                    humanoid:MoveTo(ObtenirPositionPrompt(bestTarget))
+                    local moveSuccess = humanoid.MoveToFinished:Wait() -- Attend l'arrivée (Timeout possible)
+                end
+            end
+
+            -- Ghost Mode (Invisible during steal)
+            if InternalSystem.Parametres.InvisibleDuringSteal then
+                for _, part in pairs(char:GetDescendants()) do
+                    if part:IsA("BasePart") then part.Transparency = 0.8 end
+                end
+            end
+
+            -- Activation du Prompt
+            local duration = bestTarget.HoldDuration
+            local start = tick()
+            
+            -- UI Feedback Progress
+            local conn
+            conn = RunService.RenderStepped:Connect(function()
+                local elapsed = tick() - start
+                local pct = math.clamp(elapsed / (duration + 0.1), 0, 1)
+                HUD.Progress.Size = UDim2.new(pct, 0, 1, 0)
+                if pct >= 1 then conn:Disconnect() end
+            end)
+
+            -- Interaction Réelle
+            local successInteract, interactErr = pcall(function()
+                fireproximityprompt(bestTarget)
+            end)
+
+            if not successInteract then
+                warn("⚠️ ÉCHEC fireproximityprompt: " .. tostring(interactErr))
+                HUD.Status.Text = "❌ ÉCHEC INTERACTION"
+                HUD.Status.TextColor3 = COLORS.danger
+            end
+
+            task.wait(duration + 0.2)
+            
+            -- Reset Effects
+            if InternalSystem.Parametres.InvisibleDuringSteal then
+                for _, part in pairs(char:GetDescendants()) do
+                    if part:IsA("BasePart") then part.Transparency = 0 end
+                end
+            end
+
+            HUD.Progress.Size = UDim2.new(0, 0, 1, 0)
+            isStealing = false
+        else
+            -- Si rien trouvé mais mode actif, on prévient l'utilisateur
+            if InternalSystem.Parametres.DebugMode then
+                HUD.Status.Text = "🔍 AUCUNE CIBLE DANS LA ZONE"
+                HUD.Status.TextColor3 = COLORS.textDim
+            end
+        end
+    end
+end)
+
+print("Internal System v11.0 MASSIVE - Logique Steal Aktivée")
