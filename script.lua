@@ -50,7 +50,7 @@ do
             end
         end
     end
-    print("bullys hub NAO E SOURCE DO LETHAL")
+    print("sphynx hub NAO E SOURCE DO LETHAL")
 end
 
 local Services = {
@@ -141,7 +141,9 @@ local DefaultConfig = {
     StealSpeed   = 20,
     ShowStealSpeedPanel = true,
     MenuKey      = "LeftControl",
-    MobileGuiScale = 0.5,
+    AutoBuyEnabled = false,
+    MobileGuiScale = 0.35, -- Reduced default scale for mobile
+    UILocked = false,
     XrayEnabled  = true,
     AntiRagdoll  = 0,
     AntiRagdollV2 = true,
@@ -306,7 +308,7 @@ local function kickPlayer()
         TeleportService:Teleport(1818, LocalPlayer)
     end)
     pcall(function()
-        LocalPlayer:Kick("\BULLYS HUB - macaco prego <3")
+        LocalPlayer:Kick("\SPHYNX HUB - macaco prego <3")
     end)
 end
 
@@ -444,36 +446,36 @@ local function triggerClosestUnlock(yLevel, maxY)
 end
 
 local Theme = {
-    Background      = Color3.fromRGB(20, 15, 20),   -- fundo escuro com tom rosa
-    Surface         = Color3.fromRGB(35, 25, 35),   -- caixas
-    SurfaceHighlight= Color3.fromRGB(50, 35, 50),   -- highlight
-
-    Accent1         = Color3.fromRGB(255, 120, 200), -- rosa claro
-    Accent2         = Color3.fromRGB(255, 70, 170),  -- rosa principal
-
-    TextPrimary     = Color3.fromRGB(255, 240, 250),
-    TextSecondary   = Color3.fromRGB(200, 160, 190),
-
-    Success         = Color3.fromRGB(255, 120, 200), -- botões ON
-    Error           = Color3.fromRGB(255, 90, 140),  -- erro
+    Background      = Color3.fromRGB(10, 15, 10),   -- Dark forest background
+    Surface         = Color3.fromRGB(25, 35, 25),   -- Dark surface
+    SurfaceHighlight= Color3.fromRGB(35, 50, 35),   -- Highlight surface
+    
+    Accent1         = Color3.fromRGB(0, 255, 127),  -- Vibrant Spring Green
+    Accent2         = Color3.fromRGB(0, 200, 100),  -- Secondary Green
+    
+    TextPrimary     = Color3.fromRGB(255, 255, 255),-- Pure White
+    TextSecondary   = Color3.fromRGB(180, 200, 180),-- Light muted green
+    
+    Success         = Color3.fromRGB(0, 255, 127),  -- Green for On
+    Error           = Color3.fromRGB(255, 70, 70),   -- Kept Red for Error
 }
 
 -- ============================================================
 -- SISTEMA DE TEMAS - sem `local` no top-level para nao exceder 200 locals
 -- ============================================================
 THEMES = {
-    rosa = {
-        Background       = Color3.fromRGB(20, 15, 20),
-        Surface          = Color3.fromRGB(35, 25, 35),
-        SurfaceHighlight = Color3.fromRGB(50, 35, 50),
-        Accent1          = Color3.fromRGB(255, 120, 200),
-        Accent2          = Color3.fromRGB(255, 70, 170),
-        TextPrimary      = Color3.fromRGB(255, 240, 250),
-        TextSecondary    = Color3.fromRGB(200, 160, 190),
-        Success          = Color3.fromRGB(255, 120, 200),
-        Error            = Color3.fromRGB(255, 90, 140),
-        GlowColor1       = Color3.fromRGB(255, 120, 200),
-        GlowColor2       = Color3.fromRGB(255, 70, 170),
+    green = {
+        Background       = Color3.fromRGB(10, 15, 10),
+        Surface          = Color3.fromRGB(25, 35, 25),
+        SurfaceHighlight = Color3.fromRGB(35, 50, 35),
+        Accent1          = Color3.fromRGB(0, 255, 127),
+        Accent2          = Color3.fromRGB(0, 200, 100),
+        TextPrimary      = Color3.fromRGB(255, 255, 255),
+        TextSecondary    = Color3.fromRGB(180, 200, 180),
+        Success          = Color3.fromRGB(0, 255, 127),
+        Error            = Color3.fromRGB(255, 70, 70),
+        GlowColor1       = Color3.fromRGB(0, 255, 127),
+        GlowColor2       = Color3.fromRGB(0, 200, 100),
     },
     ciano = {
         Background       = Color3.fromRGB(5, 18, 25),
@@ -639,10 +641,10 @@ function applyTheme(themeName)
     end
 
     local guiNames = {
-        "AutoStealUI", "BullysAdminPanel", "SettingsUI", "StealSpeedUI",
-        "BullysInvisPanel", "BullysStatusHUD", "BullysMobileControls", "BullysNotif",
-        "BullysThemeUI", "PriorityListGUI", "BullysJobJoiner", "BullysPriorityAlert",
-        "BullysSettings", "BullysPlatformUI"
+        "AutoStealUI", "SphynxAdminPanel", "SettingsUI", "StealSpeedUI",
+        "SphynxInvisPanel", "SphynxStatusHUD", "SphynxMobileControls", "SphynxNotif",
+        "SphynxThemeUI", "PriorityListGUI", "SphynxJobJoiner", "SphynxPriorityAlert",
+        "SphynxSettings", "SphynxPlatformUI"
     }
 
     for _, guiName in ipairs(guiNames) do
@@ -702,18 +704,18 @@ function applyTheme(themeName)
 
     -- Reconstroi nova UI (sincrono, ja com novo tema aplicado)
     task.spawn(function()
-        local savedTab  = (_G.BullysSettingsUI and _G.BullysSettingsUI.currentTab) or "act"
-        local wasVis    = _G.BullysSettingsUI and _G.BullysSettingsUI.panel and _G.BullysSettingsUI.panel.Visible
-        if buildBullysSettingsUI then
-            buildBullysSettingsUI()
+        local savedTab  = (_G.SphynxSettingsUI and _G.SphynxSettingsUI.currentTab) or "act"
+        local wasVis    = _G.SphynxSettingsUI and _G.SphynxSettingsUI.panel and _G.SphynxSettingsUI.panel.Visible
+        if buildSphynxSettingsUI then
+            buildSphynxSettingsUI()
         end
         task.wait()
-        if _G.BullysSettingsUI then
-            if _G.BullysSettingsUI.switchTab then
-                _G.BullysSettingsUI.switchTab(savedTab)
+        if _G.SphynxSettingsUI then
+            if _G.SphynxSettingsUI.switchTab then
+                _G.SphynxSettingsUI.switchTab(savedTab)
             end
-            if wasVis and _G.BullysSettingsUI.panel then
-                _G.BullysSettingsUI.panel.Visible = true
+            if wasVis and _G.SphynxSettingsUI.panel then
+                _G.SphynxSettingsUI.panel.Visible = true
             end
         end
         -- Reconstroi HUD e Mini UI com novas cores
@@ -733,7 +735,7 @@ function applyTheme(themeName)
         end
 
         -- Atualiza racetrack borders com nova cor
-        local guisRT = {"AutoStealUI","BullysAdminPanel","SettingsUI","StealSpeedUI","BullysInvisPanel","BullysSettings","BullysStatusHUD","BullysAutoBuyUI"}
+        local guisRT = {"AutoStealUI","SphynxAdminPanel","SettingsUI","StealSpeedUI","SphynxInvisPanel","SphynxSettings","SphynxStatusHUD","SphynxAutoBuyUI"}
         for _, gn in ipairs(guisRT) do
             local sg = PlayerGui:FindFirstChild(gn)
             if sg then
@@ -932,26 +934,38 @@ local function CreateGradient(parent)
     return g
 end
 
-local function ApplyViewportUIScale(targetFrame, designWidth, designHeight, minScale, maxScale)
+local function ApplyViewportUIScale(targetFrame, designWidth, designHeight, minScale, maxScale, isSettings)
     if not targetFrame then return end
     if not IS_MOBILE then return end
+    
+    if isSettings then
+        targetFrame:SetAttribute("IsSettingsGUI", true)
+    end
+    
     local existing = targetFrame:FindFirstChildOfClass("UIScale")
     if existing then existing:Destroy() end
+    
     local sc = Instance.new("UIScale")
     sc.Parent = targetFrame
     SharedState.MobileScaleObjects[targetFrame] = sc
+    
     if SharedState.RefreshMobileScale then
         SharedState.RefreshMobileScale()
     else
-        sc.Scale = math.clamp(tonumber(Config.MobileGuiScale) or 0.5, 0, 1)
+        local baseScale = math.clamp(tonumber(Config.MobileGuiScale) or 0.35, 0, 1)
+        sc.Scale = isSettings and 0.7 or baseScale
     end
 end
 
 SharedState.RefreshMobileScale = function()
-    local s = math.clamp(tonumber(Config.MobileGuiScale) or 0.5, 0, 1)
+    local s = math.clamp(tonumber(Config.MobileGuiScale) or 0.35, 0, 1)
     for frame, sc in pairs(SharedState.MobileScaleObjects) do
         if frame and frame.Parent and sc and sc.Parent == frame then
-            sc.Scale = s
+            if frame:GetAttribute("IsSettingsGUI") then
+                sc.Scale = 0.7 -- Keep settings larger for usability
+            else
+                sc.Scale = s
+            end
         else
             SharedState.MobileScaleObjects[frame] = nil
         end
@@ -1129,9 +1143,9 @@ if Config.FPSBoost then task.spawn(function() task.wait(1); setFPSBoost(true) en
 if Config.UltraLightMode then
     task.spawn(function()
         task.wait(2) -- wait for all UIs to be created
-        for _,gn in ipairs({"AutoStealUI","BullysAdminPanel","SettingsUI","StealSpeedUI",
-            "BullysInvisPanel","BullysStatusHUD","BullysSettings","BullysPlatformUI",
-            "BullysAutoBuyUI","BullysMiniActions"}) do
+        for _,gn in ipairs({"AutoStealUI","SphynxAdminPanel","SettingsUI","StealSpeedUI",
+            "SphynxInvisPanel","SphynxStatusHUD","SphynxSettings","SphynxPlatformUI",
+            "SphynxAutoBuyUI","SphynxMiniActions"}) do
             local sg = PlayerGui:FindFirstChild(gn)
             if sg then
                 for _,obj in ipairs(sg:GetDescendants()) do
@@ -2632,11 +2646,11 @@ task.spawn(function()
         local normalizedMutation = mutation and mutation:gsub("%s+", ""):lower() or ""
         local color = mutationColors[normalizedMutation] or Color3.fromRGB(0, 170, 255)
         
-        local existing = PlayerGui:FindFirstChild("BullysPriorityAlert")
+        local existing = PlayerGui:FindFirstChild("SphynxPriorityAlert")
         if existing then existing:Destroy() end
         
         local alertGui = Instance.new("ScreenGui")
-        alertGui.Name = "BullysPriorityAlert"
+        alertGui.Name = "SphynxPriorityAlert"
         alertGui.ResetOnSpawn = false
         alertGui.DisplayOrder = 999
         alertGui.Parent = PlayerGui
@@ -2952,7 +2966,7 @@ task.spawn(function()
     task.spawn(function() while true do SharedState.AllAnimalsCache=allAnimalsCache; task.wait(0.5) end end)
 
     local beamFolder = Instance.new("Folder", Workspace)
-    beamFolder.Name = "BullysTracers"
+    beamFolder.Name = "SphynxTracers"
     local currentBeam = nil
     local currentAtt0 = nil
     local currentAtt1 = nil
@@ -3115,7 +3129,7 @@ task.spawn(function()
     refreshBlacklistUI = nil
 
     local adminGui = Instance.new("ScreenGui")
-    adminGui.Name = "BullysAdminPanel"
+    adminGui.Name = "SphynxAdminPanel"
     adminGui.ResetOnSpawn = false
     adminGui.Parent = PlayerGui
 
@@ -4567,7 +4581,7 @@ local function runAutoSnipe()
         local charPos = Vector3.new(targetPart.Position.X, charY, targetPart.Position.Z)
 
         local plat = Instance.new("Part")
-        plat.Name = "BullysTempPlatform"
+        plat.Name = "SphynxTempPlatform"
         plat.Size = Vector3.new(4, 1, 4)
         plat.Position = platPos
         plat.Color = Color3.new(1, 0, 0)
@@ -4748,7 +4762,7 @@ local settingsGui = UI.settingsGui
 
 if IS_MOBILE then
     local mobileGui = Instance.new("ScreenGui")
-    mobileGui.Name = "BullysMobileControls"
+    mobileGui.Name = "SphynxMobileControls"
     mobileGui.ResetOnSpawn = false
     mobileGui.Parent = PlayerGui
 
@@ -4850,7 +4864,7 @@ if IS_MOBILE then
         local asUI = PlayerGui:FindFirstChild("AutoStealUI")
         if asUI then asUI.Enabled = not asUI.Enabled end
 
-        local adUI = PlayerGui:FindFirstChild("BullysAdminPanel")
+        local adUI = PlayerGui:FindFirstChild("SphynxAdminPanel")
         if adUI then adUI.Enabled = not adUI.Enabled end
     end)
 
@@ -4938,7 +4952,7 @@ sFrame.Position = UDim2.new(Config.Positions.Settings.X, 0, Config.Positions.Set
 sFrame.BackgroundColor3 = Theme.Background; sFrame.BackgroundTransparency = 0.05
 sFrame.BorderSizePixel = 0; sFrame.ClipsDescendants = true; sFrame.Parent = settingsGui
 
-ApplyViewportUIScale(sFrame, 300, 650, 0.45, 0.85)
+ApplyViewportUIScale(sFrame, 300, 650, 0.45, 0.85, true) -- Added true for isSettings
 AddMobileMinimize(sFrame, "SETTINGS")
 
 Instance.new("UICorner", sFrame).CornerRadius = UDim.new(0, 12)
@@ -5247,7 +5261,7 @@ end)
 local rShowUnlockHUD = CreateRow("Show Unlock Buttons HUD")
 CreateToggleSwitch(rShowUnlockHUD, Config.ShowUnlockButtonsHUD, function(ns, set)
     set(ns); Config.ShowUnlockButtonsHUD = ns; SaveConfig()
-    local hudGui = PlayerGui:FindFirstChild("BullysStatusHUD")
+    local hudGui = PlayerGui:FindFirstChild("SphynxStatusHUD")
     if hudGui then
         local main = hudGui:FindFirstChild("Main")
         local unlockContainer = main and main:FindFirstChild("UnlockButtonsContainer")
@@ -5489,7 +5503,7 @@ CreateSectionHeader("HIDE GUIS")
 local rHideAdminPanel = CreateRow("Hide Admin Panel GUI")
 CreateToggleSwitch(rHideAdminPanel, Config.HideAdminPanel, function(ns, set)
     set(ns); Config.HideAdminPanel = ns; SaveConfig()
-    local adUI = PlayerGui:FindFirstChild("BullysAdminPanel")
+    local adUI = PlayerGui:FindFirstChild("SphynxAdminPanel")
     if adUI then adUI.Enabled = not ns end
     ShowNotification("HIDE ADMIN PANEL", ns and "ENABLED" or "DISABLED")
 end)
@@ -5671,7 +5685,7 @@ CreateSectionHeader("JOB JOINER")
 local rJoinerRow = CreateRow("Job ID Joiner")
 CreateToggleSwitch(rJoinerRow, Config.ShowJobJoiner, function(ns, set)
     set(ns); Config.ShowJobJoiner = ns; SaveConfig()
-    local gui = PlayerGui:FindFirstChild("BullysJobJoiner")
+    local gui = PlayerGui:FindFirstChild("SphynxJobJoiner")
     if gui then gui.Enabled = Config.ShowJobJoiner end
     ShowNotification("JOB ID JOINER", ns and "ENABLED" or "DISABLED")
 end)
@@ -5911,10 +5925,10 @@ bReset.MouseButton1Click:Connect(function()
     if PlayerGui:FindFirstChild("StealSpeedUI") then
         PlayerGui.StealSpeedUI.Frame.Position = UDim2.new(DefaultConfig.Positions.StealSpeed.X, 0, DefaultConfig.Positions.StealSpeed.Y, 0)
     end
-    if PlayerGui:FindFirstChild("BullysAdminPanel") and PlayerGui.XiAdminPanel:FindFirstChild("Frame") then
+    if PlayerGui:FindFirstChild("SphynxAdminPanel") and PlayerGui.XiAdminPanel:FindFirstChild("Frame") then
         PlayerGui.XiAdminPanel.Frame.Position = UDim2.new(DefaultConfig.Positions.AdminPanel.X, 0, DefaultConfig.Positions.AdminPanel.Y, 0)
     end
-    if PlayerGui:FindFirstChild("BullysInvisPanel") and PlayerGui.XiInvisPanel:FindFirstChild("Frame") then
+    if PlayerGui:FindFirstChild("SphynxInvisPanel") and PlayerGui.XiInvisPanel:FindFirstChild("Frame") then
         PlayerGui.XiInvisPanel.Frame.Position = UDim2.new(DefaultConfig.Positions.InvisPanel.X, 0, DefaultConfig.Positions.InvisPanel.Y, 0)
     end
     ShowNotification("UI RESET", "Positions restored to default")
@@ -5938,8 +5952,8 @@ end
 if not IS_MOBILE then
     UserInputService.InputBegan:Connect(function(input, gp)
         if input.KeyCode == (Enum.KeyCode[Config.MenuKey] or Enum.KeyCode.LeftControl) then
-            if _G.BullysSettingsUI and _G.BullysSettingsUI.panel then
-                _G.BullysSettingsUI.panel.Visible = not _G.BullysSettingsUI.panel.Visible
+            if _G.SphynxSettingsUI and _G.SphynxSettingsUI.panel then
+                _G.SphynxSettingsUI.panel.Visible = not _G.SphynxSettingsUI.panel.Visible
             else
                 settingsGui.Enabled = not settingsGui.Enabled
             end
@@ -5971,7 +5985,7 @@ if not IS_MOBILE then
             ShowNotification("CLICK TO AP", Config.ClickToAP and "ENABLED" or "DISABLED")
         end
         if Config.JobJoinerKey and input.KeyCode == Enum.KeyCode[Config.JobJoinerKey] then
-            local joinerGui = PlayerGui:FindFirstChild("BullysJobJoiner")
+            local joinerGui = PlayerGui:FindFirstChild("SphynxJobJoiner")
             if joinerGui then
                 Config.ShowJobJoiner = not Config.ShowJobJoiner
                 joinerGui.Enabled = Config.ShowJobJoiner
@@ -5986,7 +6000,7 @@ end
 task.spawn(function()
     task.wait(1)
     if Config.HideAdminPanel then
-        local adUI = PlayerGui:FindFirstChild("BullysAdminPanel")
+        local adUI = PlayerGui:FindFirstChild("SphynxAdminPanel")
         if adUI then adUI.Enabled = false end
     end
     if Config.HideAutoSteal then
@@ -5998,19 +6012,19 @@ task.spawn(function()
         if g then g.Enabled = false end
     end
     if Config.HideInvisPanel then
-        local g = PlayerGui:FindFirstChild("BullysInvisPanel")
+        local g = PlayerGui:FindFirstChild("SphynxInvisPanel")
         if g then g.Enabled = false end
     end
     if Config.HideStatusHUD then
-        local g = PlayerGui:FindFirstChild("BullysStatusHUD")
+        local g = PlayerGui:FindFirstChild("SphynxStatusHUD")
         if g then g.Enabled = false end
     end
     if Config.HideAutoBuyUI then
-        local g = PlayerGui:FindFirstChild("BullysAutoBuyUI")
+        local g = PlayerGui:FindFirstChild("SphynxAutoBuyUI")
         if g then local p = g:FindFirstChild("ABPanel"); if p then p.Visible = false end end
     end
     if Config.HidePlatformUI then
-        local g = PlayerGui:FindFirstChild("BullysPlatformUI")
+        local g = PlayerGui:FindFirstChild("SphynxPlatformUI")
         if g then g.Enabled = false end
     end
     if Config.CompactAutoSteal then
@@ -6283,7 +6297,7 @@ end)
 task.spawn(function()
     local brainrotESPEnabled = Config.BrainrotESP
     local brainrotESPFolder = Instance.new("Folder")
-    brainrotESPFolder.Name = "BullysBrainrotESP"
+    brainrotESPFolder.Name = "SphynxBrainrotESP"
     brainrotESPFolder.Parent = Workspace
     local brainrotBillboards = {}
     local hiddenOverheads = {}
@@ -6787,7 +6801,7 @@ task.spawn(function()
 	end
 
     local invisGui = Instance.new("ScreenGui")
-    invisGui.Name = "BullysInvisPanel"
+    invisGui.Name = "SphynxInvisPanel"
     invisGui.ResetOnSpawn = false
     invisGui.Parent = PlayerGui
     invisGui.Enabled = Config.ShowInvisPanel
@@ -6803,6 +6817,7 @@ task.spawn(function()
     iStroke.Thickness = 1.5
     iStroke.Transparency = 0.4
     CreateGradient(iStroke)
+    ApplyViewportUIScale(iFrame, 250, 260, 0.5, 0.9)
     task.defer(function() if addRacetrackBorder then addRacetrackBorder(iFrame, Theme.Accent1, 3) end end)
 
     local iHeader = Instance.new("Frame", iFrame)
@@ -7390,11 +7405,11 @@ task.spawn(function()
 
     -- Destroi e reconstroi o HUD (chamado tambem pelo applyTheme)
     local function buildHUD()
-        local existing = PlayerGui:FindFirstChild("BullysStatusHUD")
+        local existing = PlayerGui:FindFirstChild("SphynxStatusHUD")
         if existing then existing:Destroy() end
 
         local hudGui = Instance.new("ScreenGui")
-        hudGui.Name = "BullysStatusHUD"
+        hudGui.Name = "SphynxStatusHUD"
         hudGui.ResetOnSpawn = false
         hudGui.DisplayOrder = 10
         hudGui.Parent = PlayerGui
@@ -7427,7 +7442,7 @@ task.spawn(function()
         title.Size = UDim2.new(0, 110, 1, 0)
         title.Position = UDim2.new(0, 18, 0, 0)
         title.BackgroundTransparency = 1
-        title.Text = "BULLYS HUB"
+        title.Text = "SPHYNX HUB"
         title.Font = Enum.Font.GothamBlack
         title.TextSize = 14
         title.TextColor3 = Theme.TextPrimary
@@ -7643,13 +7658,13 @@ task.spawn(function()
         local hrp = char:FindFirstChild("HumanoidRootPart")
         if not hrp then return end
 
-        local old = char:FindFirstChild("BullysBlacklistESP")
+        local old = char:FindFirstChild("SphynxBlacklistESP")
         if old then old:Destroy() end
 
         local msg = Config.BlacklistMsg or "BLOCKED"
 
         local bb = Instance.new("BillboardGui")
-        bb.Name                  = "BullysBlacklistESP"
+        bb.Name                  = "SphynxBlacklistESP"
         bb.Size                  = UDim2.new(0, 120, 0, 22)
         bb.StudsOffsetWorldSpace = Vector3.new(0, 5.5, 0)  -- above regular ESP (2.8)
         bb.AlwaysOnTop           = true
@@ -7691,7 +7706,7 @@ task.spawn(function()
     local function removeBlacklistESP(player)
         local char = player.Character
         if char then
-            local bb = char:FindFirstChild("BullysBlacklistESP")
+            local bb = char:FindFirstChild("SphynxBlacklistESP")
             if bb then bb:Destroy() end
         end
     end
@@ -7730,7 +7745,7 @@ task.spawn(function()
             pcall(function()
                 if isBlacklisted and isBlacklisted(p.Name) then
                     local char = p.Character
-                    if char and not char:FindFirstChild("BullysBlacklistESP") then
+                    if char and not char:FindFirstChild("SphynxBlacklistESP") then
                         makeBlacklistESP(p)
                     end
                 else
@@ -8289,7 +8304,7 @@ task.spawn(function()
                     inline = false
                 }
             },
-            footer = { text = "Bullys Hub" },
+            footer = { text = "Sphynx Hub" },
             timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
         }
 
@@ -8580,7 +8595,7 @@ task.spawn(function()
     local HEIGHT = 50 * SCALE
     
     local joinerGui = Instance.new("ScreenGui")
-    joinerGui.Name = "BullysJobJoiner"
+    joinerGui.Name = "SphynxJobJoiner"
     joinerGui.ResetOnSpawn = false
     joinerGui.Enabled = Config.ShowJobJoiner
     joinerGui.Parent = PlayerGui
@@ -8786,7 +8801,7 @@ end)
 -- ============================================================
 task.spawn(function()
     local tGui = Instance.new("ScreenGui")
-    tGui.Name = "BullysThemeUI"
+    tGui.Name = "SphynxThemeUI"
     tGui.ResetOnSpawn = false
     tGui.DisplayOrder = 50
     tGui.Parent = PlayerGui
@@ -8997,14 +9012,14 @@ end)
 -- ============================================================
 -- NOVA UI DE SETTINGS - estilo Goblin Hub v2 (tabbed, rosa, sem locals top-level)
 -- ============================================================
-function buildBullysSettingsUI()
+function buildSphynxSettingsUI()
     local pg = PlayerGui
     if not pg then return end
-    local oldBSG2 = pg:FindFirstChild("BullysSettings")
+    local oldBSG2 = pg:FindFirstChild("SphynxSettings")
     if oldBSG2 then oldBSG2:Destroy() end
 
     local bsg = Instance.new("ScreenGui")
-    bsg.Name = "BullysSettings"
+    bsg.Name = "SphynxSettings"
     bsg.ResetOnSpawn = false
     bsg.DisplayOrder = 20
     bsg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
@@ -9027,7 +9042,7 @@ function buildBullysSettingsUI()
     panel.Name = "MainPanel"
     panel.Size = UDim2.new(0, 330, 0, 510)
     do
-        local sp = Config.BullysSettingsPos
+        local sp = Config.SphynxSettingsPos
         if sp then
             panel.Position = UDim2.new(sp.X, 0, sp.Y, 0)
         else
@@ -9057,7 +9072,7 @@ function buildBullysSettingsUI()
             inp.Changed:Connect(function()
                 if inp.UserInputState == Enum.UserInputState.End then
                     local ps = panel.Parent.AbsoluteSize
-                    Config.BullysSettingsPos = {
+                    Config.SphynxSettingsPos = {
                         X = panel.AbsolutePosition.X / ps.X,
                         Y = panel.AbsolutePosition.Y / ps.Y,
                     }
@@ -9071,7 +9086,7 @@ function buildBullysSettingsUI()
     hTitle.Size = UDim2.new(0, 120, 1, 0)
     hTitle.Position = UDim2.new(0, 12, 0, 0)
     hTitle.BackgroundTransparency = 1
-    hTitle.Text = "BULLYS HUB"
+    hTitle.Text = "SPHYNX HUB"
     hTitle.Font = Enum.Font.GothamBlack
     hTitle.TextSize = 16
     hTitle.TextColor3 = C().TP
@@ -9314,7 +9329,7 @@ function buildBullysSettingsUI()
 
     local function switchTab2(id)
         activTab2 = id
-        if _G.BullysSettingsUI then _G.BullysSettingsUI.currentTab = id end
+        if _G.SphynxSettingsUI then _G.SphynxSettingsUI.currentTab = id end
         for tid, sc in pairs(tScrolls2) do sc.Visible = (tid==id) end
         for tid, tb in pairs(tBtns2) do
             local on = tid==id
@@ -9349,7 +9364,7 @@ function buildBullysSettingsUI()
     makeBtn(aS, "Auto Clone",              2, function() instantClone() ShowNotification("CLONE","Clonando...") end)
     makeBtn(aS, "Reset Personagem",        3, function() executeReset() ShowNotification("RESET","Resetando...") end)
     makeBtn(aS, "Painel Admin",            4, function()
-        local g = PlayerGui:FindFirstChild("BullysAdminPanel")
+        local g = PlayerGui:FindFirstChild("SphynxAdminPanel")
         if g then g.Enabled = not g.Enabled end
     end)
     makeBtn(aS, "Auto Steal Painel",       5, function()
@@ -9357,7 +9372,7 @@ function buildBullysSettingsUI()
         if g then g.Enabled = not g.Enabled end
     end)
     makeBtn(aS, "Job Joiner",              6, function()
-        local g = PlayerGui:FindFirstChild("BullysJobJoiner")
+        local g = PlayerGui:FindFirstChild("SphynxJobJoiner")
         if g then g.Enabled = not g.Enabled end
     end)
 
@@ -9365,7 +9380,7 @@ function buildBullysSettingsUI()
     local cS = tScrolls2["cfg"]
     makeSec(cS, "AÇÕES RÁPIDAS", 0)
     makeBtn(cS, "Abrir Painel Admin", 1, function()
-        local g = PlayerGui:FindFirstChild("BullysAdminPanel")
+        local g = PlayerGui:FindFirstChild("SphynxAdminPanel")
         if g then g.Enabled = not g.Enabled end
     end)
 
@@ -9567,7 +9582,7 @@ function buildBullysSettingsUI()
     makeToggle(vS,"Line to Base",function() return Config.LineToBase end,function(v) Config.LineToBase=v; if not v and _G.resetPlotBeam then pcall(_G.resetPlotBeam) end; SaveConfig() end,21)
     makeToggle(vS,"Unlock Buttons HUD",function() return Config.ShowUnlockButtonsHUD end,function(v)
         Config.ShowUnlockButtonsHUD=v; SaveConfig()
-        local hudGui=PlayerGui:FindFirstChild("BullysStatusHUD")
+        local hudGui=PlayerGui:FindFirstChild("SphynxStatusHUD")
         if not hudGui then return end
         local uc=hudGui:FindFirstChild("UnlockButtonsContainer")
         if uc then uc.Visible=v end
@@ -9613,7 +9628,7 @@ function buildBullysSettingsUI()
             TweenService:Create(ulSw,TweenInfo.new(0.15),{BackgroundColor3=ns and Theme.Accent1 or C().SH}):Play()
             if ns then
                 -- Kill all racetrack borders
-                for _,gn in ipairs({"AutoStealUI","BullysAdminPanel","SettingsUI","StealSpeedUI","BullysInvisPanel","BullysStatusHUD","BullysSettings","BullysPlatformUI","BullysAutoBuyUI","BullysMiniActions"}) do
+                for _,gn in ipairs({"AutoStealUI","SphynxAdminPanel","SettingsUI","StealSpeedUI","SphynxInvisPanel","SphynxStatusHUD","SphynxSettings","SphynxPlatformUI","SphynxAutoBuyUI","SphynxMiniActions"}) do
                     local sg=PlayerGui:FindFirstChild(gn); if sg then for _,obj in ipairs(sg:GetDescendants()) do if obj.Name=="RacetrackBorder" and obj:IsA("UIStroke") then obj:Destroy() end end end
                 end
             end
@@ -9735,15 +9750,15 @@ function buildBullysSettingsUI()
     -- ── UI HIDE'S TAB ──
     local uhS = tScrolls2["uih"]
     makeSec(uhS,"HIDE UIs",1)
-    makeToggle(uhS,"Hide Admin Panel",function() return Config.HideAdminPanel end,function(v) Config.HideAdminPanel=v; SaveConfig(); local g=PlayerGui:FindFirstChild("BullysAdminPanel"); if g then g.Enabled=not v end end,11)
+    makeToggle(uhS,"Hide Admin Panel",function() return Config.HideAdminPanel end,function(v) Config.HideAdminPanel=v; SaveConfig(); local g=PlayerGui:FindFirstChild("SphynxAdminPanel"); if g then g.Enabled=not v end end,11)
     makeToggle(uhS,"Hide Auto Steal",function() return Config.HideAutoSteal end,function(v) Config.HideAutoSteal=v; SaveConfig(); local g=PlayerGui:FindFirstChild("AutoStealUI"); if g then g.Enabled=not v end end,12)
-    makeToggle(uhS,"Hide Auto Buy UI",function() return Config.HideAutoBuyUI end,function(v) Config.HideAutoBuyUI=v; SaveConfig(); local g=PlayerGui:FindFirstChild("BullysAutoBuyUI"); if g then local p=g:FindFirstChild("ABPanel"); if p then p.Visible=not v end end end,13)
+    makeToggle(uhS,"Hide Auto Buy UI",function() return Config.HideAutoBuyUI end,function(v) Config.HideAutoBuyUI=v; SaveConfig(); local g=PlayerGui:FindFirstChild("SphynxAutoBuyUI"); if g then local p=g:FindFirstChild("ABPanel"); if p then p.Visible=not v end end end,13)
     makeToggle(uhS,"Hide Steal Speed UI",function() return Config.HideStealSpeedUI end,function(v) Config.HideStealSpeedUI=v; SaveConfig(); local g=PlayerGui:FindFirstChild("StealSpeedUI"); if g then g.Enabled=not v end end,14)
-    makeToggle(uhS,"Hide Status HUD",function() return Config.HideStatusHUD end,function(v) Config.HideStatusHUD=v; SaveConfig(); local g=PlayerGui:FindFirstChild("BullysStatusHUD"); if g then g.Enabled=not v end end,15)
-    makeToggle(uhS,"Hide Invis Panel",function() return Config.HideInvisPanel end,function(v) Config.HideInvisPanel=v; SaveConfig(); local g=PlayerGui:FindFirstChild("BullysInvisPanel"); if g then g.Enabled=not v end end,16)
-    makeToggle(uhS,"Hide Platform UI",function() return Config.HidePlatformUI end,function(v) Config.HidePlatformUI=v; SaveConfig(); local g=PlayerGui:FindFirstChild("BullysPlatformUI"); if g then g.Enabled=not v end end,17)
+    makeToggle(uhS,"Hide Status HUD",function() return Config.HideStatusHUD end,function(v) Config.HideStatusHUD=v; SaveConfig(); local g=PlayerGui:FindFirstChild("SphynxStatusHUD"); if g then g.Enabled=not v end end,15)
+    makeToggle(uhS,"Hide Invis Panel",function() return Config.HideInvisPanel end,function(v) Config.HideInvisPanel=v; SaveConfig(); local g=PlayerGui:FindFirstChild("SphynxInvisPanel"); if g then g.Enabled=not v end end,16)
+    makeToggle(uhS,"Hide Platform UI",function() return Config.HidePlatformUI end,function(v) Config.HidePlatformUI=v; SaveConfig(); local g=PlayerGui:FindFirstChild("SphynxPlatformUI"); if g then g.Enabled=not v end end,17)
     makeToggle(uhS,"Compact Auto Steal",function() return Config.CompactAutoSteal end,function(v) Config.CompactAutoSteal=v; SaveConfig() end,18)
-    makeToggle(uhS,"Mostrar Mini UI",function() return Config.ShowMiniActions end,function(v) Config.ShowMiniActions=v; SaveConfig(); local g=PlayerGui:FindFirstChild("BullysMiniActions"); if g then local mp=g:FindFirstChild("MiniPanel"); if mp then mp.Visible=v end end end,19)
+    makeToggle(uhS,"Mostrar Mini UI",function() return Config.ShowMiniActions end,function(v) Config.ShowMiniActions=v; SaveConfig(); local g=PlayerGui:FindFirstChild("SphynxMiniActions"); if g then local mp=g:FindFirstChild("MiniPanel"); if mp then mp.Visible=v end end end,19)
     makeToggle(uhS,"Auto Hide ao Iniciar",function() return Config.AutoHideMiniUI end,function(v) Config.AutoHideMiniUI=v; SaveConfig() end,20)
 
     -- ── INVIS TAB ──
@@ -9943,7 +9958,7 @@ function buildBullysSettingsUI()
             for _, p in ipairs(Players:GetPlayers()) do
                 local char = p.Character
                 if char then
-                    local existing = char:FindFirstChild("BullysBlacklistESP")
+                    local existing = char:FindFirstChild("SphynxBlacklistESP")
                     if existing then existing:Destroy() end
                 end
             end
@@ -9988,7 +10003,7 @@ function buildBullysSettingsUI()
         for _, p in ipairs(Players:GetPlayers()) do
             local char = p.Character
             if char then
-                local bb = char:FindFirstChild("BullysBlacklistESP")
+                local bb = char:FindFirstChild("SphynxBlacklistESP")
                 if bb then
                     local lbl = bb:FindFirstChild("MsgLbl", true)
                     if lbl then lbl.Text = msg end
@@ -10148,16 +10163,16 @@ function buildBullysSettingsUI()
     switchTab2("act")
 
     -- Expor ref global
-    _G.BullysSettingsUI = {panel=panel, switchTab=switchTab2, currentTab="act"}
+    _G.SphynxSettingsUI = {panel=panel, switchTab=switchTab2, currentTab="act"}
 end
-task.spawn(buildBullysSettingsUI)
+task.spawn(buildSphynxSettingsUI)
 
 -- ============================================================
 -- PLATFORM UI - slider para ajustar altura da plataforma
 -- ============================================================
 task.spawn(function()
     local platGui = Instance.new("ScreenGui")
-    platGui.Name = "BullysPlatformUI"
+    platGui.Name = "SphynxPlatformUI"
     platGui.ResetOnSpawn = false
     platGui.DisplayOrder = 15
     platGui.Enabled = not Config.HidePlatformUI
@@ -10304,11 +10319,11 @@ end)
 function buildMiniActionsUI()
     local pg = PlayerGui
     if not pg then return end
-    local oldG = pg:FindFirstChild("BullysMiniActions")
+    local oldG = pg:FindFirstChild("SphynxMiniActions")
     if oldG then oldG:Destroy() end
 
     local maGui = Instance.new("ScreenGui")
-    maGui.Name = "BullysMiniActions"
+    maGui.Name = "SphynxMiniActions"
     maGui.ResetOnSpawn = false
     maGui.DisplayOrder = 25
     maGui.Parent = pg
@@ -10545,11 +10560,11 @@ function buildMiniActionsUI()
     _G.AutoBuyEsteira   = false
 
     -- Destroy any leftover from previous build
-    local _oldAB = PlayerGui:FindFirstChild("BullysAutoBuyUI")
+    local _oldAB = PlayerGui:FindFirstChild("SphynxAutoBuyUI")
     if _oldAB then _oldAB:Destroy() end
 
     local abGui = Instance.new("ScreenGui")
-    abGui.Name         = "BullysAutoBuyUI"
+    abGui.Name         = "SphynxAutoBuyUI"
     abGui.ResetOnSpawn = false
     abGui.DisplayOrder = 30
     abGui.Parent       = PlayerGui
@@ -11216,7 +11231,7 @@ task.spawn(function()
     buildMiniActionsUI()
     -- Auto hide on start
     if Config.AutoHideMiniUI then
-        local g = PlayerGui:FindFirstChild("BullysMiniActions")
+        local g = PlayerGui:FindFirstChild("SphynxMiniActions")
         if g and g:FindFirstChild("MiniPanel") then
             g.MiniPanel.Visible = false
         end
