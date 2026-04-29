@@ -1,51 +1,15 @@
---!nocheck
+if not game:IsLoaded() then game.Loaded:Wait() end
 print("[SPHYNX HUB] Script execution started...")
 warn("[SPHYNX HUB] Initializing Sphynx Hub - if you see this, the script IS running.")
 
-local _ENV = getfenv and getfenv() or _G
-local setfpscap = _ENV.setfpscap
-local isexecutorclosure = _ENV.isexecutorclosure
-local newcclosure = _ENV.newcclosure
-local isfile = _ENV.isfile
-local readfile = _ENV.readfile
-local writefile = _ENV.writefile
-local firesignal = _ENV.firesignal
-local cloneref = _ENV.cloneref
-local fireproximityprompt = _ENV.fireproximityprompt
-local getconnections = _ENV.getconnections
-local getgenv = _ENV.getgenv
-local request = _ENV.request
-local raknet = _ENV.raknet
 
-local Theme = {}
-local THEMES = {}
-local MakeDraggable
-local ShowNotification
-local stopAntiRagdollV2
-local Synchronizer
-local listFrame
-local instantStealBtn
-local hasShownPriorityAlert
-local ShowPriorityAlert
-local activeCooldowns
-local updateProximityAPButton
-local sortAdminPanelList
-local runAdminCommand
-local ALL_COMMANDS
-local isOnCooldown = nil
-local setGlobalVisualCooldown
-local createPlayerRow
-local removePlayer
 
-local updateVisualState
-local refreshAvailableList
-local settingsGui
 if not game:IsLoaded() then game.Loaded:Wait() end
 pcall(function() game:GetService("Players").RespawnTime = 0 end)
 pcall(function() if setfpscap then setfpscap(9999) end end)
 local _privateBuild = false
 
-local SharedState = {
+SharedState = {
     ConveyorAnimals = {},
     BestConveyorGv = -1,
     SelectedPetData = nil,
@@ -95,7 +59,7 @@ do
     print("sphynx hub NAO E SOURCE DO LETHAL")
 end
 
-local Services = {
+Services = {
     Players = game:GetService("Players"),
     RunService = game:GetService("RunService"),
     UserInputService = game:GetService("UserInputService"),
@@ -154,7 +118,7 @@ local IS_MOBILE = isMobile()
 
 
 local FileName = "XisPublic_v1.json" 
-local DefaultConfig = {
+DefaultConfig = {
     Positions = {
         AdminPanel = {X = 0.1859375, Y = 0.5767123526556385}, 
         StealSpeed = {X = 0.02, Y = 0.18}, 
@@ -915,8 +879,8 @@ end
 -- Effet premium, subtil et non-intrusif.
 -- ============================================================
 do
-    local rainbowConns = {}
-    local rainbowStrokes = {}
+    local _rainbowConns = {}
+    local _rainbowStrokes = {}
 
     local HUB_GUI_NAMES = {
         "AutoStealUI", "SphynxAdminPanel", "SettingsUI", "StealSpeedUI",
@@ -943,7 +907,7 @@ do
         end
     end
 
-    local function collectAllStrokes()
+    local function _collectAllStrokes()
         local strokes = {}
         for _, guiName in ipairs(HUB_GUI_NAMES) do
             pcall(function()
@@ -991,22 +955,44 @@ do
 
                             local hue = (t + offset) % 1
                             local color = hsvToColor3(hue, 0.7, 1)
-                            obj.Color = color
-                            obj.Transparency = trans + math.sin(tick() * 2 + offset) * 0.1
 
-                            -- Aussi updater les UIGradient enfants
-                            local grad = obj:FindFirstChildOfClass("UIGradient")
-                            if grad then
-                                local h2 = (hue + 0.15) % 1
-                                local h3 = (hue + 0.3) % 1
-                                local bg = Color3.new(0, 0, 0)
-                                grad.Color = ColorSequence.new{
-                                    ColorSequenceKeypoint.new(0, bg),
-                                    ColorSequenceKeypoint.new(0.2, hsvToColor3(hue, 0.8, 1)),
-                                    ColorSequenceKeypoint.new(0.5, hsvToColor3(h2, 0.8, 1)),
-                                    ColorSequenceKeypoint.new(0.8, hsvToColor3(h3, 0.8, 1)),
-                                    ColorSequenceKeypoint.new(1, bg),
-                                }
+                            if obj:IsA("UIStroke") and obj.Thickness > 0 then
+                                obj.Color = color
+                                obj.Transparency = trans + math.sin(tick() * 2 + offset) * 0.1
+
+                                local grad = obj:FindFirstChildOfClass("UIGradient")
+                                if grad then
+                                    local h2 = (hue + 0.15) % 1
+                                    local h3 = (hue + 0.3) % 1
+                                    local bg = Color3.new(0, 0, 0)
+                                    grad.Color = ColorSequence.new{
+                                        ColorSequenceKeypoint.new(0, bg),
+                                        ColorSequenceKeypoint.new(0.2, hsvToColor3(hue, 0.8, 1)),
+                                        ColorSequenceKeypoint.new(0.5, hsvToColor3(h2, 0.8, 1)),
+                                        ColorSequenceKeypoint.new(0.8, hsvToColor3(h3, 0.8, 1)),
+                                        ColorSequenceKeypoint.new(1, bg),
+                                    }
+                                end
+                            elseif obj:IsA("Frame") or obj:IsA("ScrollingFrame") or obj:IsA("TextButton") or obj:IsA("TextBox") then
+                                if obj.BackgroundTransparency < 1 and obj.Name ~= "InnerGlow" and obj.Name ~= "progressBarFill" then
+                                    obj.BackgroundColor3 = hsvToColor3(hue, 0.8, 0.4)
+                                    if obj:IsA("Frame") and obj.Size.Y.Scale > 0.5 then
+                                        obj.BackgroundTransparency = 0.4 -- Make large panels transparent
+                                    else
+                                        obj.BackgroundTransparency = 0.2 -- Slightly transparent for buttons/headers
+                                    end
+                                end
+                                if obj:IsA("TextButton") or obj:IsA("TextBox") then
+                                    obj.TextColor3 = Color3.new(1, 1, 1)
+                                end
+                            elseif obj:IsA("TextLabel") and obj.BackgroundTransparency < 1 then
+                                obj.BackgroundColor3 = hsvToColor3(hue, 0.8, 0.4)
+                                obj.BackgroundTransparency = 0.3
+                            elseif obj:IsA("ImageLabel") and obj.BackgroundTransparency < 1 then
+                                obj.BackgroundColor3 = hsvToColor3(hue, 0.8, 0.4)
+                                obj.BackgroundTransparency = 0.4
+                            elseif obj:IsA("TextLabel") and obj.TextStrokeTransparency < 1 then
+                                obj.TextColor3 = hsvToColor3((hue + 0.5) % 1, 0.7, 1) -- Complementary color for text
                             end
                         end
                     end
@@ -1037,7 +1023,7 @@ do
 end
 
 
-local PRIORITY_LIST = {
+PRIORITY_LIST = {
    "Strawberry Elephant",
    "Meowl",
    "Skibidi Toilet",
@@ -7354,52 +7340,6 @@ task.spawn(function()
     end
 end)
 
--- ═══════════════════════════════════════════════════════════════════
--- AUTO DESYNC ON STEAL
--- Automatically enables RakNet desync when stealing starts,
--- and disables it when stealing stops (if it was auto-enabled).
--- ═══════════════════════════════════════════════════════════════════
-task.spawn(function()
-    local wasStealingForDesync = false
-    local autoEnabledDesync = false
-    task.wait(3) -- Wait for RakNet Desync Engine to initialize
-    while task.wait(0.15) do
-        if not Config.AutoDesyncOnSteal then
-            -- Feature disabled: if we auto-enabled it, turn it back off
-            if autoEnabledDesync then
-                pcall(function()
-                    if _G.ToggleDesync then _G.ToggleDesync(false) end
-                end)
-                autoEnabledDesync = false
-            end
-            wasStealingForDesync = false
-        else
-            local isStealing = LocalPlayer:GetAttribute("Stealing")
-            -- Transition: NOT stealing → stealing
-            if isStealing and not wasStealingForDesync then
-                -- Only auto-enable if desync isn't already on
-                if not (_G.SphynxDesyncState and _G.SphynxDesyncState.active) then
-                    task.delay(0.1, function()
-                        if LocalPlayer:GetAttribute("Stealing") then
-                            pcall(function()
-                                if _G.ToggleDesync then _G.ToggleDesync(true) end
-                            end)
-                            autoEnabledDesync = true
-                        end
-                    end)
-                end
-            end
-            -- Transition: stealing → NOT stealing
-            if not isStealing and wasStealingForDesync and autoEnabledDesync then
-                pcall(function()
-                    if _G.ToggleDesync then _G.ToggleDesync(false) end
-                end)
-                autoEnabledDesync = false
-            end
-            wasStealingForDesync = isStealing
-        end
-    end
-end)
 
 task.spawn(function()
     local function getChar()
@@ -7690,7 +7630,7 @@ task.spawn(function()
         authors.Size = UDim2.new(0, 150, 1, 0)
         authors.Position = UDim2.new(0, 122, 0, 0)
         authors.BackgroundTransparency = 1
-        authors.Text = "@bueno @willys @sheiki"
+        authors.Text = "mohamed79109"
         authors.Font = Enum.Font.GothamBold
         authors.TextSize = 10
         authors.TextColor3 = Theme.TextSecondary
@@ -9622,30 +9562,30 @@ function buildSphynxSettingsUI()
     end)
 
     makeSec(cS, "ESP", 2)
-    makeToggle(cS,"X-Ray Base",function() return Config.XrayEnabled end,function(v); Config.XrayEnabled=v; if v then enableXray() else disableXray() end; SaveConfig() end,2)
-    makeToggle(cS,"Player ESP",function() return Config.PlayerESP end,function(v); Config.PlayerESP=v; if playerESPToggleRef and playerESPToggleRef.setFn then playerESPToggleRef.setFn(v) end; SaveConfig() end,3)
-    makeToggle(cS,"Brainrot ESP",function() return Config.BrainrotESP end,function(v); Config.BrainrotESP=v; if espToggleRef and espToggleRef.setFn then espToggleRef.setFn(v) end; SaveConfig() end,4)
-    makeToggle(cS,"Tracer Brainrot",function() return Config.TracerEnabled end,function(v); Config.TracerEnabled=v; SaveConfig() end,5)
-    makeToggle(cS,"Duel Base ESP",function() return Config.DuelBaseESP end,function(v); Config.DuelBaseESP=v; SaveConfig() end,6)
-    makeToggle(cS,"Subspace Mine ESP",function() return Config.SubspaceMineESP end,function(v); Config.SubspaceMineESP=v; SaveConfig() end,7)
+    makeToggle(cS,"X-Ray Base",function() return Config.XrayEnabled end,function(v)  Config.XrayEnabled=v; if v then enableXray() else disableXray() end; SaveConfig() end,2)
+    makeToggle(cS,"Player ESP",function() return Config.PlayerESP end,function(v)  Config.PlayerESP=v; if playerESPToggleRef and playerESPToggleRef.setFn then playerESPToggleRef.setFn(v) end; SaveConfig() end,3)
+    makeToggle(cS,"Brainrot ESP",function() return Config.BrainrotESP end,function(v)  Config.BrainrotESP=v; if espToggleRef and espToggleRef.setFn then espToggleRef.setFn(v) end; SaveConfig() end,4)
+    makeToggle(cS,"Tracer Brainrot",function() return Config.TracerEnabled end,function(v)  Config.TracerEnabled=v; SaveConfig() end,5)
+    makeToggle(cS,"Duel Base ESP",function() return Config.DuelBaseESP end,function(v)  Config.DuelBaseESP=v; SaveConfig() end,6)
+    makeToggle(cS,"Subspace Mine ESP",function() return Config.SubspaceMineESP end,function(v)  Config.SubspaceMineESP=v; SaveConfig() end,7)
 
     makeSec(cS, "MOVIMENTO", 10)
     makeToggle(cS,"Infinite Jump",function() return State.infiniteJumpEnabled end,function(v) setInfiniteJump(v) end,11)
     makeToggle(cS,"FPS Boost",function() return Config.FPSBoost end,function(v) setFPSBoost(v) end,12)
-    makeToggle(cS,"Auto Steal Speed",function() return Config.AutoStealSpeed end,function(v); Config.AutoStealSpeed=v; SaveConfig() end,13)
-    makeToggle(cS,"Line to Base",function() return Config.LineToBase end,function(v); Config.LineToBase=v; if not v and _G.resetPlotBeam then pcall(_G.resetPlotBeam) end; SaveConfig() end,14)
+    makeToggle(cS,"Auto Steal Speed",function() return Config.AutoStealSpeed end,function(v)  Config.AutoStealSpeed=v; SaveConfig() end,13)
+    makeToggle(cS,"Line to Base",function() return Config.LineToBase end,function(v)  Config.LineToBase=v; if not v and _G.resetPlotBeam then pcall(_G.resetPlotBeam) end; SaveConfig() end,14)
 
     makeSec(cS, "ANTI-RAGDOLL", 20)
-    makeToggle(cS,"Anti-Ragdoll V1",function() return Config.AntiRagdoll>0 end,function(v); Config.AntiRagdoll=v and 1 or 0; if v then Config.AntiRagdollV2=false; startAntiRagdollV2(false) end; startAntiRagdoll(Config.AntiRagdoll); SaveConfig() end,21)
-    makeToggle(cS,"Anti-Ragdoll V2",function() return Config.AntiRagdollV2 end,function(v); Config.AntiRagdollV2=v; if v then Config.AntiRagdoll=0; startAntiRagdoll(0); startAntiRagdollV2(true) else startAntiRagdollV2(false) end; SaveConfig() end,22)
+    makeToggle(cS,"Anti-Ragdoll V1",function() return Config.AntiRagdoll>0 end,function(v)  Config.AntiRagdoll=v and 1 or 0; if v then Config.AntiRagdollV2=false; startAntiRagdollV2(false) end; startAntiRagdoll(Config.AntiRagdoll); SaveConfig() end,21)
+    makeToggle(cS,"Anti-Ragdoll V2",function() return Config.AntiRagdollV2 end,function(v)  Config.AntiRagdollV2=v; if v then Config.AntiRagdoll=0; startAntiRagdoll(0); startAntiRagdollV2(true) else startAntiRagdollV2(false) end; SaveConfig() end,22)
 
     makeSec(cS, "AUTOMAÇÃO", 30)
-    makeToggle(cS,"Auto Invis no Steal",function() return Config.AutoInvisDuringSteal end,function(v); Config.AutoInvisDuringSteal=v; _G.AutoInvisDuringSteal=v; SaveConfig() end,31)
+    makeToggle(cS,"Auto Invis no Steal",function() return Config.AutoInvisDuringSteal end,function(v)  Config.AutoInvisDuringSteal=v; _G.AutoInvisDuringSteal=v; SaveConfig() end,31)
     makeToggle(cS,"Auto Kick no Steal",function() return Config.AutoKickOnSteal end,function(v) if _G.setAutoKickFromSettings then _G.setAutoKickFromSettings(v) else Config.AutoKickOnSteal=v; SaveConfig() end end,32)
-    makeToggle(cS,"Auto Reset Balloon",function() return Config.AutoResetOnBalloon end,function(v); Config.AutoResetOnBalloon=v; SaveConfig() end,33)
-    makeToggle(cS,"Anti-Bee & Disco",function() return Config.AntiBeeDisco end,function(v); Config.AntiBeeDisco=v; SaveConfig(); if v and SharedState.ANTI_BEE_DISCO then SharedState.ANTI_BEE_DISCO.Enable() elseif SharedState.ANTI_BEE_DISCO then SharedState.ANTI_BEE_DISCO.Disable() end end,34)
-    makeToggle(cS,"Limpar Error GUIs",function() return Config.CleanErrorGUIs end,function(v); Config.CleanErrorGUIs=v; SaveConfig() end,35)
-    makeToggle(cS,"Auto TP ao Carregar",function() return Config.TpSettings.TpOnLoad end,function(v); Config.TpSettings.TpOnLoad=v; SaveConfig() end,36)
+    makeToggle(cS,"Auto Reset Balloon",function() return Config.AutoResetOnBalloon end,function(v)  Config.AutoResetOnBalloon=v; SaveConfig() end,33)
+    makeToggle(cS,"Anti-Bee & Disco",function() return Config.AntiBeeDisco end,function(v)  Config.AntiBeeDisco=v; SaveConfig(); if v and SharedState.ANTI_BEE_DISCO then SharedState.ANTI_BEE_DISCO.Enable() elseif SharedState.ANTI_BEE_DISCO then SharedState.ANTI_BEE_DISCO.Disable() end end,34)
+    makeToggle(cS,"Limpar Error GUIs",function() return Config.CleanErrorGUIs end,function(v)  Config.CleanErrorGUIs=v; SaveConfig() end,35)
+    makeToggle(cS,"Auto TP ao Carregar",function() return Config.TpSettings.TpOnLoad end,function(v)  Config.TpSettings.TpOnLoad=v; SaveConfig() end,36)
 
     -- ─── AUTO STEAL DEFAULTS ─────────────────────────────────────────────
     makeSec(cS, "AUTO STEAL DEFAULTS", 37)
@@ -9780,15 +9720,15 @@ function buildSphynxSettingsUI()
 
     -- ─── BINDS ───────────────────────────────────────────────────────────
     makeSec(cS, "BINDS", 70)
-    makeKey(cS,"Teleport",function() return Config.TpSettings.TpKey end,function(v); Config.TpSettings.TpKey=v end,71)
-    makeKey(cS,"Ragdoll Self",function() return Config.RagdollSelfKey ~= "" and Config.RagdollSelfKey or "NONE" end,function(v); Config.RagdollSelfKey=v; SaveConfig() end,81)
-    makeKey(cS,"Clone",function() return Config.TpSettings.CloneKey end,function(v); Config.TpSettings.CloneKey=v end,72)
-    makeKey(cS,"Carpet Speed",function() return Config.TpSettings.CarpetSpeedKey end,function(v); Config.TpSettings.CarpetSpeedKey=v end,73)
-    makeKey(cS,"Steal Speed",function() return Config.StealSpeedKey end,function(v); Config.StealSpeedKey=v end,74)
-    makeKey(cS,"Invis Toggle",function() return Config.InvisToggleKey end,function(v); Config.InvisToggleKey=v; _G.INVISIBLE_STEAL_KEY=Enum.KeyCode[v] or Enum.KeyCode.I end,75)
-    makeKey(cS,"Menu",function() return Config.MenuKey end,function(v); Config.MenuKey=v end,76)
-    makeKey(cS,"Reset",function() return Config.ResetKey end,function(v); Config.ResetKey=v end,77)
-    makeKey(cS,"Kick",function() return Config.KickKey end,function(v); Config.KickKey=v end,78)
+    makeKey(cS,"Teleport",function() return Config.TpSettings.TpKey end,function(v)  Config.TpSettings.TpKey=v end,71)
+    makeKey(cS,"Ragdoll Self",function() return Config.RagdollSelfKey ~= "" and Config.RagdollSelfKey or "NONE" end,function(v)  Config.RagdollSelfKey=v; SaveConfig() end,81)
+    makeKey(cS,"Clone",function() return Config.TpSettings.CloneKey end,function(v)  Config.TpSettings.CloneKey=v end,72)
+    makeKey(cS,"Carpet Speed",function() return Config.TpSettings.CarpetSpeedKey end,function(v)  Config.TpSettings.CarpetSpeedKey=v end,73)
+    makeKey(cS,"Steal Speed",function() return Config.StealSpeedKey end,function(v)  Config.StealSpeedKey=v end,74)
+    makeKey(cS,"Invis Toggle",function() return Config.InvisToggleKey end,function(v)  Config.InvisToggleKey=v; _G.INVISIBLE_STEAL_KEY=Enum.KeyCode[v] or Enum.KeyCode.I end,75)
+    makeKey(cS,"Menu",function() return Config.MenuKey end,function(v)  Config.MenuKey=v end,76)
+    makeKey(cS,"Reset",function() return Config.ResetKey end,function(v)  Config.ResetKey=v end,77)
+    makeKey(cS,"Kick",function() return Config.KickKey end,function(v)  Config.KickKey=v end,78)
     makeKey(cS,"Click To AP",function() return Config.ClickToAPKeybind or "L" end,function(v)
         Config.ClickToAPKeybind=v; SaveConfig()
     end,79)
@@ -9806,39 +9746,29 @@ function buildSphynxSettingsUI()
     -- ── VISUALS TAB ──
     local vS = tScrolls2["vis"]
     makeSec(vS,"ESP",1)
-    makeToggle(vS,"X-Ray Base",function() return Config.XrayEnabled end,function(v); Config.XrayEnabled=v; if v then enableXray() else disableXray() end; SaveConfig() end,11)
-    makeToggle(vS,"Player ESP",function() return Config.PlayerESP end,function(v); Config.PlayerESP=v; if playerESPToggleRef and playerESPToggleRef.setFn then playerESPToggleRef.setFn(v) end; SaveConfig() end,12)
-    makeToggle(vS,"Brainrot ESP",function() return Config.BrainrotESP end,function(v); Config.BrainrotESP=v; if espToggleRef and espToggleRef.setFn then espToggleRef.setFn(v) end; SaveConfig() end,13)
-    makeToggle(vS,"Conveyor ESP",function() return Config.ConveyorESP end,function(v); Config.ConveyorESP=v; SaveConfig() end,14)
-    makeToggle(vS,"Tracer Brainrot",function() return Config.TracerEnabled end,function(v); Config.TracerEnabled=v; SaveConfig() end,15)
-    makeToggle(vS,"Duel Base ESP",function() return Config.DuelBaseESP end,function(v); Config.DuelBaseESP=v; SaveConfig() end,16)
-    makeToggle(vS,"Subspace Mine ESP",function() return Config.SubspaceMineESP end,function(v); Config.SubspaceMineESP=v; SaveConfig() end,17)
-    makeToggle(vS,"Stealing HUD",function() return Config.ShowStealingHUD~=false end,function(v); Config.ShowStealingHUD=v; SaveConfig(); local g=PlayerGui:FindFirstChild("XiStealingHUD"); if g then g.Enabled=v end end,18)
-    makeToggle(vS,"Desync Visualizer",function() return Config.DesyncVisualizer end,function(v); Config.DesyncVisualizer=v; SaveConfig() end,19)
+    makeToggle(vS,"X-Ray Base",function() return Config.XrayEnabled end,function(v)  Config.XrayEnabled=v; if v then enableXray() else disableXray() end; SaveConfig() end,11)
+    makeToggle(vS,"Player ESP",function() return Config.PlayerESP end,function(v)  Config.PlayerESP=v; if playerESPToggleRef and playerESPToggleRef.setFn then playerESPToggleRef.setFn(v) end; SaveConfig() end,12)
+    makeToggle(vS,"Brainrot ESP",function() return Config.BrainrotESP end,function(v)  Config.BrainrotESP=v; if espToggleRef and espToggleRef.setFn then espToggleRef.setFn(v) end; SaveConfig() end,13)
+    makeToggle(vS,"Conveyor ESP",function() return Config.ConveyorESP end,function(v)  Config.ConveyorESP=v; SaveConfig() end,14)
+    makeToggle(vS,"Tracer Brainrot",function() return Config.TracerEnabled end,function(v)  Config.TracerEnabled=v; SaveConfig() end,15)
+    makeToggle(vS,"Duel Base ESP",function() return Config.DuelBaseESP end,function(v)  Config.DuelBaseESP=v; SaveConfig() end,16)
+    makeToggle(vS,"Subspace Mine ESP",function() return Config.SubspaceMineESP end,function(v)  Config.SubspaceMineESP=v; SaveConfig() end,17)
+    makeToggle(vS,"Stealing HUD",function() return Config.ShowStealingHUD~=false end,function(v)  Config.ShowStealingHUD=v; SaveConfig(); local g=PlayerGui:FindFirstChild("XiStealingHUD"); if g then g.Enabled=v end end,18)
 
     makeSec(vS,"ANTI-DETECTION",50)
-    makeToggle(vS,"Anti-Detection",function() return Config.AntiDetectionEnabled end,function(v); Config.AntiDetectionEnabled=v; SaveConfig(); ShowNotification("ANTI-DETECT",v and "ON" or "OFF") end,51)
-    makeToggle(vS,"Spoof GUI Names",function() return Config.SpoofGUIIdentity end,function(v); Config.SpoofGUIIdentity=v; SaveConfig(); ShowNotification("GUI SPOOF",v and "ON" or "OFF") end,52)
-    makeToggle(vS,"Hide Executor Traces",function() return Config.HideExecutorTraces end,function(v); Config.HideExecutorTraces=v; SaveConfig(); ShowNotification("TRACES",v and "HIDDEN" or "VISIBLE") end,53)
-    makeToggle(vS,"Random Action Delays",function() return Config.RandomizeActionDelays end,function(v); Config.RandomizeActionDelays=v; SaveConfig(); ShowNotification("JITTER",v and "ON" or "OFF") end,54)
-    makeToggle(vS,"Anti-Idle Kick",function() return Config.AntiIdleKick end,function(v); Config.AntiIdleKick=v; SaveConfig(); ShowNotification("ANTI-IDLE",v and "ON" or "OFF") end,55)
-    makeToggle(vS,"Anti-Screenshot",function() return Config.AntiScreenshot end,function(v); Config.AntiScreenshot=v; SaveConfig(); ShowNotification("ANTI-SS",v and "ON" or "OFF") end,56)
-    makeToggle(vS,"Stealth Mode",function() return Config.StealthMode end,function(v); if _G.ToggleStealthMode then _G.ToggleStealthMode(v) end end,57)
+    makeToggle(vS,"Anti-Detection",function() return Config.AntiDetectionEnabled end,function(v)  Config.AntiDetectionEnabled=v; SaveConfig(); ShowNotification("ANTI-DETECT",v and "ON" or "OFF") end,51)
+    makeToggle(vS,"Spoof GUI Names",function() return Config.SpoofGUIIdentity end,function(v)  Config.SpoofGUIIdentity=v; SaveConfig(); ShowNotification("GUI SPOOF",v and "ON" or "OFF") end,52)
+    makeToggle(vS,"Hide Executor Traces",function() return Config.HideExecutorTraces end,function(v)  Config.HideExecutorTraces=v; SaveConfig(); ShowNotification("TRACES",v and "HIDDEN" or "VISIBLE") end,53)
+    makeToggle(vS,"Random Action Delays",function() return Config.RandomizeActionDelays end,function(v)  Config.RandomizeActionDelays=v; SaveConfig(); ShowNotification("JITTER",v and "ON" or "OFF") end,54)
+    makeToggle(vS,"Anti-Idle Kick",function() return Config.AntiIdleKick end,function(v)  Config.AntiIdleKick=v; SaveConfig(); ShowNotification("ANTI-IDLE",v and "ON" or "OFF") end,55)
+    makeToggle(vS,"Anti-Screenshot",function() return Config.AntiScreenshot end,function(v)  Config.AntiScreenshot=v; SaveConfig(); ShowNotification("ANTI-SS",v and "ON" or "OFF") end,56)
+    makeToggle(vS,"Stealth Mode",function() return Config.StealthMode end,function(v)  if _G.ToggleStealthMode then _G.ToggleStealthMode(v) end end,57)
     makeSec(vS,"RAINBOW",58)
-    makeToggle(vS,"Rainbow Borders",function() return Config.RainbowBorders end,function(v); Config.RainbowBorders=v; SaveConfig(); if v then if _G.StartRainbowBorders then _G.StartRainbowBorders() end else if _G.StopRainbowBorders then _G.StopRainbowBorders() end end; ShowNotification("RAINBOW",v and "🌈 ON" or "OFF") end,59)
+    makeToggle(vS,"Rainbow Borders",function() return Config.RainbowBorders end,function(v)  Config.RainbowBorders=v; SaveConfig(); if v then if _G.StartRainbowBorders then _G.StartRainbowBorders() end else if _G.StopRainbowBorders then _G.StopRainbowBorders() end end; ShowNotification("RAINBOW",v and "🌈 ON" or "OFF") end,59)
 
-    if _G.RaknetDesyncAvailable ~= false then
-        makeSec(vS,"RAKNET DESYNC",60)
-        makeToggle(vS,"Desync Enabled",function() return Config.RaknetDesyncEnabled end,function(v); Config.RaknetDesyncEnabled=v; if _G.SphynxDesyncState then _G.SphynxDesyncState.active=v end; SaveConfig(); ShowNotification("DESYNC",v and "ON" or "OFF") end,61)
-        makeToggle(vS,"Freeze Server Pos",function() return Config.DesyncFreezeServer end,function(v); Config.DesyncFreezeServer=v; SaveConfig(); ShowNotification("FREEZE",v and "ON" or "OFF") end,62)
-        makeBtn(vS,"Cycle Mode [".. (Config.DesyncMode or "behind"):upper() .."]",63,function() if _G.CycleDesyncMode then _G.CycleDesyncMode() end end)
-        makeToggle(vS,"Auto Desync on Steal",function() return Config.AutoDesyncOnSteal end,function(v); Config.AutoDesyncOnSteal=v; SaveConfig(); ShowNotification("DESYNC",v and "🌀 Auto Desync on Steal ON" or "Auto Desync on Steal OFF") end,64)
-        makeToggle(vS,"Desync No Anim",function() return Config.DesyncNoAnim end,function(v); Config.DesyncNoAnim=v; SaveConfig(); if _G.ToggleDesyncNoAnim then _G.ToggleDesyncNoAnim(v) end end,65)
-        makeKey(vS,"Desync Key",function() return Config.DesyncKey or "G" end,function(v); Config.DesyncKey=v; SaveConfig() end,66)
-    end
 
     makeSec(vS,"OVERLAYS",20)
-    makeToggle(vS,"Line to Base",function() return Config.LineToBase end,function(v); Config.LineToBase=v; if not v and _G.resetPlotBeam then pcall(_G.resetPlotBeam) end; SaveConfig() end,21)
+    makeToggle(vS,"Line to Base",function() return Config.LineToBase end,function(v)  Config.LineToBase=v; if not v and _G.resetPlotBeam then pcall(_G.resetPlotBeam) end; SaveConfig() end,21)
     makeToggle(vS,"Unlock Buttons HUD",function() return Config.ShowUnlockButtonsHUD end,function(v)
         Config.ShowUnlockButtonsHUD=v; SaveConfig()
         local hudGui=PlayerGui:FindFirstChild("SphynxStatusHUD")
@@ -9868,7 +9798,7 @@ function buildSphynxSettingsUI()
         local fRstRow=Instance.new("Frame",vS); fRstRow.Size=UDim2.new(1,0,0,34); fRstRow.BackgroundColor3=C().SURF; fRstRow.BorderSizePixel=0; fRstRow.LayoutOrder=39; Instance.new("UICorner",fRstRow).CornerRadius=UDim.new(0,7)
         local fRstLbl=Instance.new("TextLabel",fRstRow); fRstLbl.Size=UDim2.new(0.6,0,1,0); fRstLbl.Position=UDim2.new(0,10,0,0); fRstLbl.BackgroundTransparency=1; fRstLbl.Text="Reset FOV"; fRstLbl.Font=Enum.Font.GothamBold; fRstLbl.TextSize=11; fRstLbl.TextColor3=C().TP; fRstLbl.TextXAlignment=Enum.TextXAlignment.Left
         local fRstBtn=Instance.new("TextButton",fRstRow); fRstBtn.Size=UDim2.new(0,70,0,24); fRstBtn.Position=UDim2.new(1,-78,0.5,-12); fRstBtn.BackgroundColor3=C().SH; fRstBtn.Text="Reset"; fRstBtn.Font=Enum.Font.GothamBold; fRstBtn.TextSize=11; fRstBtn.TextColor3=C().TP; fRstBtn.AutoButtonColor=false; Instance.new("UICorner",fRstBtn).CornerRadius=UDim.new(0,5)
-        fRstBtn.MouseButton1Click:Connect(function(); Config.FOV=70; SaveConfig(); if Workspace.CurrentCamera then Workspace.CurrentCamera.FieldOfView=70 end; ShowNotification("FOV","Reset to 70") end)
+        fRstBtn.MouseButton1Click:Connect(function()  Config.FOV=70; SaveConfig(); if Workspace.CurrentCamera then Workspace.CurrentCamera.FieldOfView=70 end; ShowNotification("FOV","Reset to 70") end)
     end
     makeSec(vS,"PERFORMANCE",40)
     makeToggle(vS,"FPS Boost",function() return Config.FPSBoost end,function(v) setFPSBoost(v) end,41)
@@ -9898,35 +9828,35 @@ function buildSphynxSettingsUI()
     local mS = tScrolls2["mov"]
     makeSec(mS,"MOVIMENTO",1)
     makeToggle(mS,"Infinite Jump",function() return State.infiniteJumpEnabled end,function(v) setInfiniteJump(v) end,11)
-    makeToggle(mS,"Auto Steal Speed",function() return Config.AutoStealSpeed end,function(v); Config.AutoStealSpeed=v; SaveConfig() end,12)
-    makeToggle(mS,"Float",function() return Config.FloatEnabled end,function(v); Config.FloatEnabled=v; if v then if _G._floatConn then _G._floatConn:Disconnect() end; _G._floatConn=RunService.RenderStepped:Connect(function() local c=LocalPlayer.Character; local h=c and c:FindFirstChild("HumanoidRootPart"); if h then h.AssemblyLinearVelocity=Vector3.new(h.AssemblyLinearVelocity.X,30,h.AssemblyLinearVelocity.Z) end end) else if _G._floatConn then _G._floatConn:Disconnect(); _G._floatConn=nil end end; SaveConfig() end,13)
-    makeToggle(mS,"Return to Brainrot",function() return Config.ReturnToBrainrot end,function(v); Config.ReturnToBrainrot=v; SaveConfig() end,14)
-    makeToggle(mS,"Auto Back to Brainrot",function() return Config.AutoBackToBrainrot end,function(v); Config.AutoBackToBrainrot=v; SaveConfig() end,15)
+    makeToggle(mS,"Auto Steal Speed",function() return Config.AutoStealSpeed end,function(v)  Config.AutoStealSpeed=v; SaveConfig() end,12)
+    makeToggle(mS,"Float",function() return Config.FloatEnabled end,function(v)  Config.FloatEnabled=v; if v then if _G._floatConn then _G._floatConn:Disconnect() end; _G._floatConn=RunService.RenderStepped:Connect(function() local c=LocalPlayer.Character; local h=c and c:FindFirstChild("HumanoidRootPart"); if h then h.AssemblyLinearVelocity=Vector3.new(h.AssemblyLinearVelocity.X,30,h.AssemblyLinearVelocity.Z) end end) else if _G._floatConn then _G._floatConn:Disconnect(); _G._floatConn=nil end end; SaveConfig() end,13)
+    makeToggle(mS,"Return to Brainrot",function() return Config.ReturnToBrainrot end,function(v)  Config.ReturnToBrainrot=v; SaveConfig() end,14)
+    makeToggle(mS,"Auto Back to Brainrot",function() return Config.AutoBackToBrainrot end,function(v)  Config.AutoBackToBrainrot=v; SaveConfig() end,15)
     makeSec(mS,"ANTI-RAGDOLL",20)
-    makeToggle(mS,"Anti-Ragdoll V1",function() return Config.AntiRagdoll>0 end,function(v); Config.AntiRagdoll=v and 1 or 0; if v then Config.AntiRagdollV2=false; startAntiRagdollV2(false) end; startAntiRagdoll(Config.AntiRagdoll); SaveConfig() end,21)
-    makeToggle(mS,"Anti-Ragdoll V2",function() return Config.AntiRagdollV2 end,function(v); Config.AntiRagdollV2=v; if v then Config.AntiRagdoll=0; startAntiRagdoll(0); startAntiRagdollV2(true) else startAntiRagdollV2(false) end; SaveConfig() end,22)
+    makeToggle(mS,"Anti-Ragdoll V1",function() return Config.AntiRagdoll>0 end,function(v)  Config.AntiRagdoll=v and 1 or 0; if v then Config.AntiRagdollV2=false; startAntiRagdollV2(false) end; startAntiRagdoll(Config.AntiRagdoll); SaveConfig() end,21)
+    makeToggle(mS,"Anti-Ragdoll V2",function() return Config.AntiRagdollV2 end,function(v)  Config.AntiRagdollV2=v; if v then Config.AntiRagdoll=0; startAntiRagdoll(0); startAntiRagdollV2(true) else startAntiRagdollV2(false) end; SaveConfig() end,22)
     makeSec(mS,"PROTECTION",25)
-    makeToggle(mS,"Auto-Destroy Turrets",function() return Config.AutoDestroyTurrets end,function(v); Config.AutoDestroyTurrets=v; SaveConfig() end,251)
+    makeToggle(mS,"Auto-Destroy Turrets",function() return Config.AutoDestroyTurrets end,function(v)  Config.AutoDestroyTurrets=v; SaveConfig() end,251)
     makeSec(mS,"AUTO UNLOCK",28)
-    makeToggle(mS,"Auto Unlock on Steal",function() return Config.AutoUnlockOnSteal end,function(v); Config.AutoUnlockOnSteal=v; SaveConfig() end,281)
+    makeToggle(mS,"Auto Unlock on Steal",function() return Config.AutoUnlockOnSteal end,function(v)  Config.AutoUnlockOnSteal=v; SaveConfig() end,281)
     makeSec(mS,"AUTOMAÇÃO",30)
-    makeToggle(mS,"Auto Invis no Steal",function() return Config.AutoInvisDuringSteal end,function(v); Config.AutoInvisDuringSteal=v; _G.AutoInvisDuringSteal=v; SaveConfig() end,31)
+    makeToggle(mS,"Auto Invis no Steal",function() return Config.AutoInvisDuringSteal end,function(v)  Config.AutoInvisDuringSteal=v; _G.AutoInvisDuringSteal=v; SaveConfig() end,31)
     makeToggle(mS,"Auto Kick no Steal",function() return Config.AutoKickOnSteal end,function(v) if _G.setAutoKickFromSettings then _G.setAutoKickFromSettings(v) else Config.AutoKickOnSteal=v; SaveConfig() end end,32)
-    makeToggle(mS,"Auto Reset Balloon",function() return Config.AutoResetOnBalloon end,function(v); Config.AutoResetOnBalloon=v; SaveConfig() end,33)
-    makeToggle(mS,"Anti-Bee & Disco",function() return Config.AntiBeeDisco end,function(v); Config.AntiBeeDisco=v; SaveConfig(); if v and SharedState.ANTI_BEE_DISCO then SharedState.ANTI_BEE_DISCO.Enable() elseif SharedState.ANTI_BEE_DISCO then SharedState.ANTI_BEE_DISCO.Disable() end end,34)
-    makeToggle(mS,"Limpar Error GUIs",function() return Config.CleanErrorGUIs end,function(v); Config.CleanErrorGUIs=v; SaveConfig() end,35)
-    makeToggle(mS,"Auto Turret ao Segurar",function() return Config.AutoTurretOnBrainrot end,function(v); Config.AutoTurretOnBrainrot=v; SaveConfig() end,36)
+    makeToggle(mS,"Auto Reset Balloon",function() return Config.AutoResetOnBalloon end,function(v)  Config.AutoResetOnBalloon=v; SaveConfig() end,33)
+    makeToggle(mS,"Anti-Bee & Disco",function() return Config.AntiBeeDisco end,function(v)  Config.AntiBeeDisco=v; SaveConfig(); if v and SharedState.ANTI_BEE_DISCO then SharedState.ANTI_BEE_DISCO.Enable() elseif SharedState.ANTI_BEE_DISCO then SharedState.ANTI_BEE_DISCO.Disable() end end,34)
+    makeToggle(mS,"Limpar Error GUIs",function() return Config.CleanErrorGUIs end,function(v)  Config.CleanErrorGUIs=v; SaveConfig() end,35)
+    makeToggle(mS,"Auto Turret ao Segurar",function() return Config.AutoTurretOnBrainrot end,function(v)  Config.AutoTurretOnBrainrot=v; SaveConfig() end,36)
     makeSec(mS,"BINDS",40)
-    makeKey(mS,"Steal Speed",function() return Config.StealSpeedKey end,function(v); Config.StealSpeedKey=v end,41)
-    makeKey(mS,"Invis Toggle",function() return Config.InvisToggleKey end,function(v); Config.InvisToggleKey=v; _G.INVISIBLE_STEAL_KEY=Enum.KeyCode[v] or Enum.KeyCode.I end,42)
-    makeKey(mS,"Ragdoll Self",function() return Config.RagdollSelfKey ~= "" and Config.RagdollSelfKey or "NONE" end,function(v); Config.RagdollSelfKey=v; SaveConfig() end,43)
-    makeKey(mS,"Reset",function() return Config.ResetKey end,function(v); Config.ResetKey=v end,44)
-    makeKey(mS,"Float Key",function() return Config.FloatKey or "F" end,function(v); Config.FloatKey=v; SaveConfig() end,45)
-    makeKey(mS,"Menu",function() return Config.MenuKey end,function(v); Config.MenuKey=v end,46)
-    makeKey(mS,"Kick",function() return Config.KickKey end,function(v); Config.KickKey=v end,47)
-    makeKey(mS,"Click To AP",function() return Config.ClickToAPKeybind or "L" end,function(v); Config.ClickToAPKeybind=v; SaveConfig() end,48)
-    makeKey(mS,"Proximity AP",function() return Config.ProximityAPKeybind or "P" end,function(v); Config.ProximityAPKeybind=v; SaveConfig() end,49)
-    makeKey(mS,"Auto Buy Toggle Key",function() return Config.AutoBuyKey or "K" end,function(v); Config.AutoBuyKey=v; SaveConfig() end,50)
+    makeKey(mS,"Steal Speed",function() return Config.StealSpeedKey end,function(v)  Config.StealSpeedKey=v end,41)
+    makeKey(mS,"Invis Toggle",function() return Config.InvisToggleKey end,function(v)  Config.InvisToggleKey=v; _G.INVISIBLE_STEAL_KEY=Enum.KeyCode[v] or Enum.KeyCode.I end,42)
+    makeKey(mS,"Ragdoll Self",function() return Config.RagdollSelfKey ~= "" and Config.RagdollSelfKey or "NONE" end,function(v)  Config.RagdollSelfKey=v; SaveConfig() end,43)
+    makeKey(mS,"Reset",function() return Config.ResetKey end,function(v)  Config.ResetKey=v end,44)
+    makeKey(mS,"Float Key",function() return Config.FloatKey or "F" end,function(v)  Config.FloatKey=v; SaveConfig() end,45)
+    makeKey(mS,"Menu",function() return Config.MenuKey end,function(v)  Config.MenuKey=v end,46)
+    makeKey(mS,"Kick",function() return Config.KickKey end,function(v)  Config.KickKey=v end,47)
+    makeKey(mS,"Click To AP",function() return Config.ClickToAPKeybind or "L" end,function(v)  Config.ClickToAPKeybind=v; SaveConfig() end,48)
+    makeKey(mS,"Proximity AP",function() return Config.ProximityAPKeybind or "P" end,function(v)  Config.ProximityAPKeybind=v; SaveConfig() end,49)
+    makeKey(mS,"Auto Buy Toggle Key",function() return Config.AutoBuyKey or "K" end,function(v)  Config.AutoBuyKey=v; SaveConfig() end,50)
     do
         local rRejoin=Instance.new("Frame",mS); rRejoin.Size=UDim2.new(1,0,0,36); rRejoin.BackgroundColor3=C().SURF; rRejoin.BorderSizePixel=0; rRejoin.LayoutOrder=51; Instance.new("UICorner",rRejoin).CornerRadius=UDim.new(0,7)
         local rl=Instance.new("TextLabel",rRejoin); rl.Size=UDim2.new(0.6,0,1,0); rl.Position=UDim2.new(0,10,0,0); rl.BackgroundTransparency=1; rl.Text="Rejoin"; rl.Font=Enum.Font.GothamBold; rl.TextSize=11; rl.TextColor3=C().TP; rl.TextXAlignment=Enum.TextXAlignment.Left
@@ -9938,12 +9868,12 @@ function buildSphynxSettingsUI()
     local tpS = tScrolls2["tp"]
 
     makeSec(tpS,"AUTO TP",10)
-    makeToggle(tpS,"Auto TP on Script Load",function() return Config.TpSettings.TpOnLoad end,function(v); Config.TpSettings.TpOnLoad=v; SaveConfig() end,11)
+    makeToggle(tpS,"Auto TP on Script Load",function() return Config.TpSettings.TpOnLoad end,function(v)  Config.TpSettings.TpOnLoad=v; SaveConfig() end,11)
     do
         local r=Instance.new("Frame",tpS); r.Size=UDim2.new(1,0,0,36); r.BackgroundColor3=C().SURF; r.BorderSizePixel=0; r.LayoutOrder=12; Instance.new("UICorner",r).CornerRadius=UDim.new(0,7)
         local lbl=Instance.new("TextLabel",r); lbl.Size=UDim2.new(0.6,0,0,16); lbl.Position=UDim2.new(0,10,0,10); lbl.BackgroundTransparency=1; lbl.Text="Min Gen for Auto TP"; lbl.Font=Enum.Font.GothamBold; lbl.TextSize=11; lbl.TextColor3=C().TP; lbl.TextXAlignment=Enum.TextXAlignment.Left
         local tb=Instance.new("TextBox",r); tb.Size=UDim2.new(0,110,0,24); tb.Position=UDim2.new(1,-118,0.5,-12); tb.BackgroundColor3=C().SH; tb.Text=tostring(Config.TpSettings.MinGenForTp or ""); tb.Font=Enum.Font.Gotham; tb.TextSize=11; tb.TextColor3=C().TP; tb.PlaceholderText="e.g. 5k, 1m, 1b"; tb.ClearTextOnFocus=false; Instance.new("UICorner",tb).CornerRadius=UDim.new(0,5)
-        tb.FocusLost:Connect(function(); Config.TpSettings.MinGenForTp=tb.Text:gsub("%s",""); SaveConfig() end)
+        tb.FocusLost:Connect(function()  Config.TpSettings.MinGenForTp=tb.Text:gsub("%s",""); SaveConfig() end)
     end
 
     makeSec(tpS,"TP TOOL",19)
@@ -9954,7 +9884,7 @@ function buildSphynxSettingsUI()
             local lbl=Instance.new("TextLabel",r); lbl.Size=UDim2.new(1,-60,1,0); lbl.Position=UDim2.new(0,10,0,0); lbl.BackgroundTransparency=1; lbl.Text=tn; lbl.Font=Enum.Font.GothamBold; lbl.TextSize=11; lbl.TextColor3=C().TP; lbl.TextXAlignment=Enum.TextXAlignment.Left
             local sw=Instance.new("TextButton",r); sw.Size=UDim2.new(0,50,0,22); sw.Position=UDim2.new(1,-58,0.5,-11); sw.Font=Enum.Font.GothamBold; sw.TextSize=11; sw.AutoButtonColor=false; Instance.new("UICorner",sw).CornerRadius=UDim.new(0,5)
             local function ref() local on=Config.TpSettings.Tool==tn; sw.Text=on and"ON"or"OFF"; sw.BackgroundColor3=on and Theme.Accent1 or C().SH; sw.TextColor3=on and Color3.new(0,0,0) or C().TP end
-            ref(); sw.MouseButton1Click:Connect(function(); Config.TpSettings.Tool=tn; SaveConfig(); for _,s in pairs(sws) do pcall(s) end end); sws[tn]=ref
+            ref(); sw.MouseButton1Click:Connect(function()  Config.TpSettings.Tool=tn; SaveConfig(); for _,s in pairs(sws) do pcall(s) end end); sws[tn]=ref
         end
         local sRow=Instance.new("Frame",tpS); sRow.Size=UDim2.new(1,0,0,34); sRow.BackgroundColor3=C().SURF; sRow.BorderSizePixel=0; sRow.LayoutOrder=25; Instance.new("UICorner",sRow).CornerRadius=UDim.new(0,7)
         local sl=Instance.new("TextLabel",sRow); sl.Size=UDim2.new(0.55,0,1,0); sl.Position=UDim2.new(0,10,0,0); sl.BackgroundTransparency=1; sl.Text="Teleport Delay (1=Fast)"; sl.Font=Enum.Font.GothamBold; sl.TextSize=11; sl.TextColor3=C().TP; sl.TextXAlignment=Enum.TextXAlignment.Left
@@ -9963,16 +9893,16 @@ function buildSphynxSettingsUI()
         for i=1,4 do
             local sb=Instance.new("TextButton",sCont); sb.Size=UDim2.new(0.22,0,1,0); sb.Position=UDim2.new((i-1)*0.26,0,0,0); sb.Font=Enum.Font.GothamBold; sb.TextSize=12; sb.AutoButtonColor=false; sb.Text=tostring(i); Instance.new("UICorner",sb).CornerRadius=UDim.new(0,4)
             local function ref() for j,b in ipairs(sBtns) do local on=j==Config.TpSettings.Speed; b.BackgroundColor3=on and Theme.Accent1 or C().SH; b.TextColor3=on and Color3.new(0,0,0) or C().TP end end
-            sb.MouseButton1Click:Connect(function(); Config.TpSettings.Speed=i; SaveConfig(); ref() end); table.insert(sBtns,sb)
+            sb.MouseButton1Click:Connect(function()  Config.TpSettings.Speed=i; SaveConfig(); ref() end); table.insert(sBtns,sb)
         end
         task.defer(function() for j,b in ipairs(sBtns) do local on=j==(Config.TpSettings.Speed or 2); b.BackgroundColor3=on and Theme.Accent1 or C().SH; b.TextColor3=on and Color3.new(0,0,0) or C().TP end end)
     end
 
     makeSec(tpS,"TP AUTOMATION",30)
-    makeToggle(tpS,"Auto TP Priority Mode",function() return Config.AutoTPPriority end,function(v); Config.AutoTPPriority=v; SaveConfig() end,31)
-    makeToggle(tpS,"Auto TP on Failed Steal",function() return Config.AutoTpOnFailedSteal or false end,function(v); Config.AutoTpOnFailedSteal=v; SaveConfig() end,32)
-    makeToggle(tpS,"Auto TP Follow Target",function() return Config.AutoTPFollowTarget or false end,function(v); Config.AutoTPFollowTarget=v; SaveConfig() end,33)
-    makeToggle(tpS,"Return to Brainrot",function() return Config.ReturnToBrainrot end,function(v); Config.ReturnToBrainrot=v; SaveConfig() end,34)
+    makeToggle(tpS,"Auto TP Priority Mode",function() return Config.AutoTPPriority end,function(v)  Config.AutoTPPriority=v; SaveConfig() end,31)
+    makeToggle(tpS,"Auto TP on Failed Steal",function() return Config.AutoTpOnFailedSteal or false end,function(v)  Config.AutoTpOnFailedSteal=v; SaveConfig() end,32)
+    makeToggle(tpS,"Auto TP Follow Target",function() return Config.AutoTPFollowTarget or false end,function(v)  Config.AutoTPFollowTarget=v; SaveConfig() end,33)
+    makeToggle(tpS,"Return to Brainrot",function() return Config.ReturnToBrainrot end,function(v)  Config.ReturnToBrainrot=v; SaveConfig() end,34)
 
     makeSec(tpS,"PLATFORM",40)
     do
@@ -9990,14 +9920,14 @@ function buildSphynxSettingsUI()
             UserInputService.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then drag=false end end)
             UserInputService.InputChanged:Connect(function(i) if drag and(i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch) then upd(mn+math.clamp((i.Position.X-bg.AbsolutePosition.X)/bg.AbsoluteSize.X,0,1)*(mx-mn)) end end)
         end
-        mkSlider("Platform Offset",41,function() return Config.PlatformOffset or 12.5 end,function(v); Config.PlatformOffset=v end,1,30)
-        mkSlider("Platform Time (sec)",42,function() return Config.PlatformTime or 10 end,function(v); Config.PlatformTime=math.floor(v) end,3,30)
+        mkSlider("Platform Offset",41,function() return Config.PlatformOffset or 12.5 end,function(v)  Config.PlatformOffset=v end,1,30)
+        mkSlider("Platform Time (sec)",42,function() return Config.PlatformTime or 10 end,function(v)  Config.PlatformTime=math.floor(v) end,3,30)
     end
 
     makeSec(tpS,"TP KEYBINDS",50)
-    makeKey(tpS,"TP Keybind",function() return Config.TpSettings.TpKey end,function(v); Config.TpSettings.TpKey=v end,51)
-    makeKey(tpS,"Auto Clone Keybind",function() return Config.TpSettings.CloneKey end,function(v); Config.TpSettings.CloneKey=v end,52)
-    makeKey(tpS,"Carpet Speed Keybind",function() return Config.TpSettings.CarpetSpeedKey end,function(v); Config.TpSettings.CarpetSpeedKey=v end,53)
+    makeKey(tpS,"TP Keybind",function() return Config.TpSettings.TpKey end,function(v)  Config.TpSettings.TpKey=v end,51)
+    makeKey(tpS,"Auto Clone Keybind",function() return Config.TpSettings.CloneKey end,function(v)  Config.TpSettings.CloneKey=v end,52)
+    makeKey(tpS,"Carpet Speed Keybind",function() return Config.TpSettings.CarpetSpeedKey end,function(v)  Config.TpSettings.CarpetSpeedKey=v end,53)
     do
         local csRow=Instance.new("Frame",tpS); csRow.Size=UDim2.new(1,0,0,34); csRow.BackgroundColor3=C().SURF; csRow.BorderSizePixel=0; csRow.LayoutOrder=54; Instance.new("UICorner",csRow).CornerRadius=UDim.new(0,7)
         local csl=Instance.new("TextLabel",csRow); csl.Size=UDim2.new(0.6,0,1,0); csl.Position=UDim2.new(0,10,0,0); csl.BackgroundTransparency=1; csl.Text="Carpet Speed Status"; csl.Font=Enum.Font.GothamBold; csl.TextSize=11; csl.TextColor3=C().TP; csl.TextXAlignment=Enum.TextXAlignment.Left
@@ -10009,16 +9939,16 @@ function buildSphynxSettingsUI()
     -- ── UI HIDE'S TAB ──
     local uhS = tScrolls2["uih"]
     makeSec(uhS,"HIDE UIs",1)
-    makeToggle(uhS,"Hide Admin Panel",function() return Config.HideAdminPanel end,function(v); Config.HideAdminPanel=v; SaveConfig(); local g=PlayerGui:FindFirstChild("SphynxAdminPanel"); if g then g.Enabled=not v end end,11)
-    makeToggle(uhS,"Hide Auto Steal",function() return Config.HideAutoSteal end,function(v); Config.HideAutoSteal=v; SaveConfig(); local g=PlayerGui:FindFirstChild("AutoStealUI"); if g then g.Enabled=not v end end,12)
-    makeToggle(uhS,"Hide Auto Buy UI",function() return Config.HideAutoBuyUI end,function(v); Config.HideAutoBuyUI=v; SaveConfig(); local g=PlayerGui:FindFirstChild("SphynxAutoBuyUI"); if g then local p=g:FindFirstChild("ABPanel"); if p then p.Visible=not v end end end,13)
-    makeToggle(uhS,"Hide Steal Speed UI",function() return Config.HideStealSpeedUI end,function(v); Config.HideStealSpeedUI=v; SaveConfig(); local g=PlayerGui:FindFirstChild("StealSpeedUI"); if g then g.Enabled=not v end end,14)
-    makeToggle(uhS,"Hide Status HUD",function() return Config.HideStatusHUD end,function(v); Config.HideStatusHUD=v; SaveConfig(); local g=PlayerGui:FindFirstChild("SphynxStatusHUD"); if g then g.Enabled=not v end end,15)
-    makeToggle(uhS,"Hide Invis Panel",function() return Config.HideInvisPanel end,function(v); Config.HideInvisPanel=v; SaveConfig(); local g=PlayerGui:FindFirstChild("SphynxInvisPanel"); if g then g.Enabled=not v end end,16)
-    makeToggle(uhS,"Hide Platform UI",function() return Config.HidePlatformUI end,function(v); Config.HidePlatformUI=v; SaveConfig(); local g=PlayerGui:FindFirstChild("SphynxPlatformUI"); if g then g.Enabled=not v end end,17)
-    makeToggle(uhS,"Compact Auto Steal",function() return Config.CompactAutoSteal end,function(v); Config.CompactAutoSteal=v; SaveConfig() end,18)
-    makeToggle(uhS,"Mostrar Mini UI",function() return Config.ShowMiniActions end,function(v); Config.ShowMiniActions=v; SaveConfig(); local g=PlayerGui:FindFirstChild("SphynxMiniActions"); if g then local mp=g:FindFirstChild("MiniPanel"); if mp then mp.Visible=v end end end,19)
-    makeToggle(uhS,"Auto Hide ao Iniciar",function() return Config.AutoHideMiniUI end,function(v); Config.AutoHideMiniUI=v; SaveConfig() end,20)
+    makeToggle(uhS,"Hide Admin Panel",function() return Config.HideAdminPanel end,function(v)  Config.HideAdminPanel=v; SaveConfig(); local g=PlayerGui:FindFirstChild("SphynxAdminPanel"); if g then g.Enabled=not v end end,11)
+    makeToggle(uhS,"Hide Auto Steal",function() return Config.HideAutoSteal end,function(v)  Config.HideAutoSteal=v; SaveConfig(); local g=PlayerGui:FindFirstChild("AutoStealUI"); if g then g.Enabled=not v end end,12)
+    makeToggle(uhS,"Hide Auto Buy UI",function() return Config.HideAutoBuyUI end,function(v)  Config.HideAutoBuyUI=v; SaveConfig(); local g=PlayerGui:FindFirstChild("SphynxAutoBuyUI"); if g then local p=g:FindFirstChild("ABPanel"); if p then p.Visible=not v end end end,13)
+    makeToggle(uhS,"Hide Steal Speed UI",function() return Config.HideStealSpeedUI end,function(v)  Config.HideStealSpeedUI=v; SaveConfig(); local g=PlayerGui:FindFirstChild("StealSpeedUI"); if g then g.Enabled=not v end end,14)
+    makeToggle(uhS,"Hide Status HUD",function() return Config.HideStatusHUD end,function(v)  Config.HideStatusHUD=v; SaveConfig(); local g=PlayerGui:FindFirstChild("SphynxStatusHUD"); if g then g.Enabled=not v end end,15)
+    makeToggle(uhS,"Hide Invis Panel",function() return Config.HideInvisPanel end,function(v)  Config.HideInvisPanel=v; SaveConfig(); local g=PlayerGui:FindFirstChild("SphynxInvisPanel"); if g then g.Enabled=not v end end,16)
+    makeToggle(uhS,"Hide Platform UI",function() return Config.HidePlatformUI end,function(v)  Config.HidePlatformUI=v; SaveConfig(); local g=PlayerGui:FindFirstChild("SphynxPlatformUI"); if g then g.Enabled=not v end end,17)
+    makeToggle(uhS,"Compact Auto Steal",function() return Config.CompactAutoSteal end,function(v)  Config.CompactAutoSteal=v; SaveConfig() end,18)
+    makeToggle(uhS,"Mostrar Mini UI",function() return Config.ShowMiniActions end,function(v)  Config.ShowMiniActions=v; SaveConfig(); local g=PlayerGui:FindFirstChild("SphynxMiniActions"); if g then local mp=g:FindFirstChild("MiniPanel"); if mp then mp.Visible=v end end end,19)
+    makeToggle(uhS,"Auto Hide ao Iniciar",function() return Config.AutoHideMiniUI end,function(v)  Config.AutoHideMiniUI=v; SaveConfig() end,20)
 
     -- ── INVIS TAB ──
     local iS = tScrolls2["inv"]
@@ -10748,7 +10678,7 @@ function buildMiniActionsUI()
     -- 1. Teleport
     mBtn("Teleport ("..tpKey..")", 1, Theme.Surface, function()
         task.spawn(runAutoSnipe)
-        ShowNotification("TP", "Teleportando...")
+        ShowNotification("TP", "Teleporting...")
     end)
 
     -- 2. Ragdoll Self
@@ -10756,7 +10686,7 @@ function buildMiniActionsUI()
         task.spawn(function()
             if _G.runAdminCommand then
                 if _G.runAdminCommand(LocalPlayer, "ragdoll") then
-                    ShowNotification("RAGDOLL", "Ativado")
+                    ShowNotification("RAGDOLL", "Activated")
                 end
             end
         end)
@@ -10764,7 +10694,7 @@ function buildMiniActionsUI()
 
     -- 3. Rejoin
     mBtn("Rejoin", 3, Theme.Surface, function()
-        ShowNotification("REJOIN", "Reconectando...")
+        ShowNotification("REJOIN", "Reconnecting...")
         task.delay(0.5, function()
             pcall(function() TeleportService:Teleport(game.PlaceId, LocalPlayer) end)
         end)
@@ -10778,7 +10708,7 @@ function buildMiniActionsUI()
     -- 5. Reset
     mBtn("Reset ("..resetKey..")", 5, Color3.fromRGB(200, 60, 40), function()
         executeReset()
-        ShowNotification("RESET", "Resetando...")
+        ShowNotification("RESET", "Resetting...")
     end)
 
     -- 6. Auto Kick toggle
@@ -10811,9 +10741,14 @@ function buildMiniActionsUI()
         if _G.setAutoKickFromMiniUI then _G.setAutoKickFromMiniUI() end
     end
 
-
-
-
+    -- 7. Settings
+    mBtn("Settings", 7, Theme.SurfaceHighlight, function()
+        if _G.SphynxSettingsUI and _G.SphynxSettingsUI.panel then
+            _G.SphynxSettingsUI.panel.Visible = not _G.SphynxSettingsUI.panel.Visible
+        elseif settingsGui then
+            settingsGui.Enabled = not settingsGui.Enabled
+        end
+    end)
     -- ── AUTO BUY UI + BUTTON ────────────────────────────────────────────
     local autoBuyActive = false
     _G.AutoBuyEsteira   = false
@@ -11519,7 +11454,7 @@ task.spawn(function()
     while true do local ok2,_found=pcall(scan); if ok2 and _found then SharedState.ConveyorAnimals=_found; local b=-1; for _,e in ipairs(_found) do if(e.gv or 0)>b then b=e.gv end end; SharedState.BestConveyorGv=b end; task.wait(0.5) end
 end)
 
-local function setFloat(enabled); Config.FloatEnabled=enabled; SaveConfig(); if _G._floatConn then _G._floatConn:Disconnect(); _G._floatConn=nil end; if not enabled then return end; _G._floatConn=RunService.RenderStepped:Connect(function() local c=LocalPlayer.Character; local h=c and c:FindFirstChild("HumanoidRootPart"); if h then h.AssemblyLinearVelocity=Vector3.new(h.AssemblyLinearVelocity.X,30,h.AssemblyLinearVelocity.Z) end end) end
+local function setFloat(enabled) Config.FloatEnabled=enabled; SaveConfig(); if _G._floatConn then _G._floatConn:Disconnect(); _G._floatConn=nil end; if not enabled then return end; _G._floatConn=RunService.RenderStepped:Connect(function() local c=LocalPlayer.Character; local h=c and c:FindFirstChild("HumanoidRootPart"); if h then h.AssemblyLinearVelocity=Vector3.new(h.AssemblyLinearVelocity.X,30,h.AssemblyLinearVelocity.Z) end end) end
 _G.setFloat=setFloat
 if Config.FloatEnabled then task.delay(1,function() setFloat(true) end) end
 UserInputService.InputBegan:Connect(function(inp,gp) if gp then return end; if inp.KeyCode==(Enum.KeyCode[Config.FloatKey] or Enum.KeyCode.F) then setFloat(not Config.FloatEnabled); ShowNotification("FLOAT",Config.FloatEnabled and"ON"or"OFF") end end)
@@ -11530,9 +11465,9 @@ local function tpToBestBrainrot()
     SharedState.BestBaseGv=bestBaseGv
     local bestConv,bestConvGv=nil,-1; for _,e in ipairs(SharedState.ConveyorAnimals or {}) do local gv=tonumber(e.gv) or 0; if e.prompt and e.prompt.Parent and e.prompt.Enabled and e.part and e.part.Parent and gv>bestConvGv then bestConvGv=gv;bestConv=e end end; SharedState.BestConveyorGv=bestConvGv
     local useConv=bestConv and bestConv.part and bestConv.part.Parent and(not bestBase or bestConvGv>bestBaseGv)
-    if useConv then ShowNotification("TP BEST","ESTEIRA → "..(bestConv.name or "?")); task.spawn(function() local char=LocalPlayer.Character; local hrp=char and char:FindFirstChild("HumanoidRootPart"); local hum=char and char:FindFirstChild("Humanoid"); if not hrp or not hum then return end; local tool=LocalPlayer.Backpack:FindFirstChild(Config.TpSettings.Tool) or char:FindFirstChild(Config.TpSettings.Tool); if tool then hum:EquipTool(tool) end; hrp.AssemblyLinearVelocity=Vector3.new(0,280,0); RunService.Heartbeat:Wait(); hrp.CFrame=CFrame.new(bestConv.part.Position+Vector3.new(0,3,0)) end); return end
+    if useConv then ShowNotification("TP BEST","CONVEYOR → "..(bestConv.name or "?")); task.spawn(function() local char=LocalPlayer.Character; local hrp=char and char:FindFirstChild("HumanoidRootPart"); local hum=char and char:FindFirstChild("Humanoid"); if not hrp or not hum then return end; local tool=LocalPlayer.Backpack:FindFirstChild(Config.TpSettings.Tool) or char:FindFirstChild(Config.TpSettings.Tool); if tool then hum:EquipTool(tool) end; hrp.AssemblyLinearVelocity=Vector3.new(0,280,0); RunService.Heartbeat:Wait(); hrp.CFrame=CFrame.new(bestConv.part.Position+Vector3.new(0,3,0)) end); return end
     if bestBase then ShowNotification("TP BEST","BASE → "..bestBase.name); SharedState.SelectedPetData={petName=bestBase.name,mpsText=bestBase.genText,mpsValue=bestBase.genValue,owner=bestBase.owner,plot=bestBase.plot,slot=bestBase.slot,uid=bestBase.uid,mutation=bestBase.mutation,animalData=bestBase}; task.spawn(runAutoSnipe)
-    else ShowNotification("TP BEST","Nenhum brainrot encontrado!") end
+    else ShowNotification("TP BEST","No brainrot found!") end
 end
 _G.tpToBestBrainrot=tpToBestBrainrot
 
@@ -11571,58 +11506,6 @@ task.spawn(function()
                 end
             end
         end
-    end
-end)
--- ── DESYNC VISUALIZER ────────────────────────────────────────────────────
-task.spawn(function()
-    repeat task.wait() until game:IsLoaded()
-    local serverPos=Vector3.new(0,0,0); local lastPos=Vector3.new(0,0,0); local cframeConn
-    local spp=Instance.new("Part"); spp.Name="DesyncVisualizer"; spp.Shape=Enum.PartType.Ball
-    spp.Size=Vector3.new(2,2,2); spp.Color=Theme.Accent1; spp.Material=Enum.Material.Neon
-    spp.Transparency=0.5; spp.Anchored=true; spp.CanCollide=false; spp.CastShadow=false; spp.Parent=Workspace
-    local sAtt=Instance.new("Attachment",spp); local cAtt=Instance.new("Attachment")
-    local beam=Instance.new("Beam"); beam.Name="DesyncBeam"; beam.Transparency=NumberSequence.new(0.5)
-    beam.Color=ColorSequence.new(Theme.Accent1); beam.Width0=0.05; beam.Width1=0.05
-    beam.FaceCamera=true; beam.Attachment0=cAtt; beam.Attachment1=sAtt; beam.Parent=spp
-    local bb=Instance.new("BillboardGui"); bb.Name="DesyncGui"; bb.Size=UDim2.new(0,200,0,50)
-    bb.StudsOffset=Vector3.new(0,3,0); bb.AlwaysOnTop=true; bb.Parent=spp
-    local tl=Instance.new("TextLabel",bb); tl.Size=UDim2.new(1,0,1,0); tl.BackgroundTransparency=1
-    tl.Font=Enum.Font.GothamBlack; tl.TextColor3=Theme.Accent1; tl.TextStrokeColor3=Color3.new(0,0,0)
-    tl.TextStrokeTransparency=0; tl.TextScaled=false; tl.TextSize=12; tl.Text="SERVER POS\n-- studs"
-    local function setupHrp(hrp)
-        if cframeConn then cframeConn:Disconnect() end
-        cframeConn=hrp:GetPropertyChangedSignal("CFrame"):Connect(function()
-            if Config.DesyncVisualizer then serverPos=hrp.Position end
-        end)
-    end
-    RunService.Heartbeat:Connect(function()
-        local v=Config.DesyncVisualizer; bb.Enabled=v; spp.Transparency=v and 0.5 or 1; beam.Enabled=v
-        if not v then return end
-        local char=LocalPlayer.Character; if not char then return end
-        local hrp=char:FindFirstChild("HumanoidRootPart"); if not hrp then return end
-        cAtt.Parent=hrp
-        local pos=hrp.Position
-        if (pos-lastPos).Magnitude>25 then serverPos=pos end
-        spp.Position=serverPos+Vector3.new(0,-2.5,0); lastPos=pos
-        local col=Theme.Accent1; spp.Color=col; beam.Color=ColorSequence.new(col); tl.TextColor3=col
-        tl.Text=string.format("SERVER POS\n%.1f studs",(serverPos-pos).Magnitude)
-    end)
-    if raknet and raknet.add_send_hook then
-        raknet.add_send_hook(function(packet)
-            if not Config.DesyncVisualizer then return end
-            if packet.PacketId==0x1B then
-                local b=packet.AsBuffer; buffer.writeu32(b,1,0xFFFFFFFF)
-                buffer.writeu32(b,5,0xFFFFFFFF); buffer.writeu32(b,9,0xFFFFFFFF); packet:SetData(b)
-            end
-        end)
-    end
-    LocalPlayer.CharacterAdded:Connect(function(c)
-        local hrp=c:WaitForChild("HumanoidRootPart")
-        serverPos=hrp.Position; lastPos=hrp.Position; setupHrp(hrp)
-    end)
-    if LocalPlayer.Character then
-        local hrp=LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        if hrp then serverPos=hrp.Position; lastPos=hrp.Position; setupHrp(hrp) end
     end
 end)
 
@@ -11742,7 +11625,7 @@ task.spawn(function()
     -- ────────────────────────────────────────────────
     if Config.RandomizeActionDelays then
         -- Override global task.wait avec jitter
-        local originalWait = task.wait
+        local _originalWait = task.wait
         local jitterEnabled = true
 
         _G.SphynxJitter = function(baseDelay)
@@ -11849,6 +11732,19 @@ task.spawn(function()
     -- ────────────────────────────────────────────────
     if Config.AntiDetectionEnabled then
         task.delay(math.random(3, 6), function()
+            -- Bypass LocalPlayer:Kick()
+            pcall(function()
+                if hookmetamethod and getnamecallmethod then
+                    local oldNamecall
+                    oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+                        if not checkcaller() and self == LocalPlayer and getnamecallmethod() == "Kick" then
+                            return
+                        end
+                        return oldNamecall(self, ...)
+                    end))
+                end
+            end)
+
             -- Bloque les remotes de report/détection connues
             local suspectRemotePatterns = {
                 "detect", "report", "cheat", "exploit", "hack",
@@ -11889,7 +11785,7 @@ task.spawn(function()
                 if getconnections then
                     for _, conn in ipairs(getconnections(RunService.Heartbeat)) do
                         pcall(function()
-                            local info = conn.Function and debug.getinfo and debug.getinfo(conn.Function)
+                            local _info = conn.Function and debug.getinfo and debug.getinfo(conn.Function)
                             -- On ne désactive que les connexions sans source (injectées)
                         end)
                     end
@@ -11933,7 +11829,6 @@ task.spawn(function()
                 ConveyorESP = Config.ConveyorESP,
                 TracerEnabled = Config.TracerEnabled,
                 XrayEnabled = Config.XrayEnabled,
-                DesyncVisualizer = Config.DesyncVisualizer,
                 ShowStealingHUD = Config.ShowStealingHUD,
                 LineToBase = Config.LineToBase,
                 DuelBaseESP = Config.DuelBaseESP,
@@ -11945,7 +11840,6 @@ task.spawn(function()
             Config.ConveyorESP = false
             Config.TracerEnabled = false
             Config.XrayEnabled = false
-            Config.DesyncVisualizer = false
             Config.ShowStealingHUD = false
             Config.LineToBase = false
             Config.DuelBaseESP = false
@@ -11963,7 +11857,6 @@ task.spawn(function()
                 Config.ConveyorESP = backup.ConveyorESP
                 Config.TracerEnabled = backup.TracerEnabled
                 Config.XrayEnabled = backup.XrayEnabled
-                Config.DesyncVisualizer = backup.DesyncVisualizer
                 Config.ShowStealingHUD = backup.ShowStealingHUD
                 Config.LineToBase = backup.LineToBase
                 Config.DuelBaseESP = backup.DuelBaseESP
@@ -11980,307 +11873,4 @@ task.spawn(function()
     ShowNotification("SPHYNX", "🛡️ Anti-Detection Engine LOADED")
 end)
 
--- ================================================================
--- ██████  SPHYNX RAKNET DESYNC ENGINE ██████
--- ================================================================
--- Système de désynchronisation avancé utilisant RakNet
--- Permet de déplacer ta position serveur indépendamment
--- du client pour esquiver les steals et les attaques.
---
--- Fonctionne UNIQUEMENT si l'exécuteur supporte raknet.
--- ================================================================
-
-task.spawn(function()
-    repeat task.wait() until game:IsLoaded()
-    task.wait(2)
-
-    -- Vérifie si l'exécuteur supporte raknet
-    local HAS_RAKNET_HOOK = raknet and type(raknet.add_send_hook) == "function" and true or false
-    local HAS_RAKNET_DESYNC = raknet and type(raknet.desync) == "function" and true or false
-
-    if not HAS_RAKNET_HOOK and not HAS_RAKNET_DESYNC then
-        _G.RaknetDesyncAvailable = false
-        warn("[SPHYNX HUB] No RakNet support found. Desync disabled.")
-        return
-    end
-
-    _G.RaknetDesyncAvailable = true
-
-    -- ── État du Desync ──
-    local desyncState = {
-        active = false,
-        frozenPosition = nil,
-        serverPosition = nil,
-        lastRealPosition = nil,
-        savedCFrame = nil,
-        serverIndicator = nil,
-        desyncDistance = Config.DesyncDistance or 15,
-        mode = Config.DesyncMode or "cathub",   -- "cathub", "behind", "above", "random", "freeze"
-    }
-    _G.SphynxDesyncState = desyncState
-    
-    if not HAS_RAKNET_HOOK and desyncState.mode ~= "cathub" then
-        desyncState.mode = "cathub"
-        Config.DesyncMode = "cathub"
-    end
-
-    -- ── Helper pour l'indicateur Cathub ──
-    _G.DestroyServerIndicator = function()
-        if desyncState.serverIndicator then
-            pcall(function() desyncState.serverIndicator.folder:Destroy() end)
-            pcall(function() desyncState.serverIndicator.playerAtt:Destroy() end)
-            desyncState.serverIndicator = nil
-        end
-        pcall(function() if workspace:FindFirstChild("CatHUB_ServerPos") then workspace.CatHUB_ServerPos:Destroy() end end)
-    end
-
-    _G.CreateServerIndicator = function(position)
-        _G.DestroyServerIndicator()
-        local folder = Instance.new("Folder")
-        folder.Name = "CatHUB_ServerPos"
-        folder.Parent = workspace
-
-        local box = Instance.new("Part")
-        box.Name = "ServerBox"
-        box.Size = Vector3.new(4, 5, 4)
-        box.CFrame = CFrame.new(position)
-        box.Anchored = true
-        box.CanCollide = false
-        box.Transparency = 0.6
-        box.Color = Color3.fromRGB(0, 0, 0)
-        box.Material = Enum.Material.SmoothPlastic
-        box.Parent = folder
-
-        local billboard = Instance.new("BillboardGui")
-        billboard.Size = UDim2.new(0, 140, 0, 30)
-        billboard.StudsOffset = Vector3.new(0, 3.5, 0)
-        billboard.AlwaysOnTop = true
-        billboard.Parent = box
-
-        local textLabel = Instance.new("TextLabel")
-        textLabel.Size = UDim2.new(1, 0, 1, 0)
-        textLabel.BackgroundTransparency = 1
-        textLabel.Text = "Server Position"
-        textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-        textLabel.TextSize = 14
-        textLabel.Font = Enum.Font.GothamBold
-        textLabel.TextStrokeTransparency = 0.5
-        textLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-        textLabel.Parent = billboard
-
-        local playerAtt = Instance.new("Attachment")
-        playerAtt.Name = "CatHUB_PlayerAtt"
-        local boxAtt = Instance.new("Attachment")
-        boxAtt.Parent = box
-
-        local beam = Instance.new("Beam")
-        beam.Width0 = 0.2
-        beam.Width1 = 0.2
-        beam.Color = ColorSequence.new(Color3.fromRGB(255, 255, 255))
-        beam.Transparency = NumberSequence.new(0.4)
-        beam.FaceCamera = true
-        beam.LightEmission = 0.5
-        beam.Attachment0 = boxAtt
-        beam.Attachment1 = playerAtt
-        beam.Parent = box
-
-        local char = LocalPlayer.Character
-        if char then
-            local hrp = char:FindFirstChild("HumanoidRootPart")
-            if hrp then playerAtt.Parent = hrp end
-        end
-
-        desyncState.serverIndicator = {folder = folder, box = box, beam = beam, playerAtt = playerAtt, boxAtt = boxAtt}
-    end
-
-    -- ── Hook RakNet pour intercepter les paquets (modes classiques) ──
-    if HAS_RAKNET_HOOK then
-        local PHYSICS_PACKET_ID = 0x1B
-        local MOVEMENT_PACKET_ID = 0x55
-
-        raknet.add_send_hook(function(packet)
-            if not desyncState.active or desyncState.mode == "cathub" then return end
-            if not Config.RaknetDesyncEnabled then return end
-
-            local char = LocalPlayer.Character
-            local hrp = char and char:FindFirstChild("HumanoidRootPart")
-            if not hrp then return end
-
-            if packet.PacketId == PHYSICS_PACKET_ID then
-                pcall(function()
-                    local data = packet.AsBuffer
-                    local dist = desyncState.desyncDistance
-                    local offset = Vector3.new()
-                    
-                    if desyncState.mode == "behind" then offset = -hrp.CFrame.LookVector * dist
-                    elseif desyncState.mode == "above" then offset = Vector3.new(0, dist * 3, 0)
-                    elseif desyncState.mode == "random" then
-                        local angle = math.random() * math.pi * 2
-                        offset = Vector3.new(math.cos(angle) * dist, math.random(-2, 5), math.sin(angle) * dist)
-                    elseif desyncState.mode == "freeze" then
-                        if not desyncState.frozenPosition then desyncState.frozenPosition = hrp.Position end
-                        offset = desyncState.frozenPosition - hrp.Position
-                    end
-                    
-                    local fakePos = hrp.Position + offset
-                    desyncState.serverPosition = fakePos
-                    local baseOffset = 1
-                    buffer.writef32(data, baseOffset, fakePos.X)
-                    buffer.writef32(data, baseOffset + 4, fakePos.Y)
-                    buffer.writef32(data, baseOffset + 8, fakePos.Z)
-                    packet:SetData(data)
-                end)
-            end
-
-            if packet.PacketId == MOVEMENT_PACKET_ID then
-                pcall(function()
-                    if Config.DesyncFreezeServer or desyncState.mode == "freeze" then
-                        local data = packet.AsBuffer
-                        buffer.writeu32(data, 1, 0xFFFFFFFF)
-                        buffer.writeu32(data, 5, 0xFFFFFFFF)
-                        buffer.writeu32(data, 9, 0xFFFFFFFF)
-                        packet:SetData(data)
-                    end
-                end)
-            end
-        end)
-    end
-
-    -- ── Logic de Toggle ──
-    _G.ToggleDesync = function(forceState)
-        if forceState ~= nil then desyncState.active = forceState
-        else desyncState.active = not desyncState.active end
-        
-        Config.RaknetDesyncEnabled = desyncState.active
-        local char = LocalPlayer.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        
-        if desyncState.active then
-            desyncState.frozenPosition = nil
-            if hrp then desyncState.lastRealPosition = hrp.Position end
-            
-            if desyncState.mode == "cathub" then
-                if hrp then
-                    desyncState.savedCFrame = hrp.CFrame
-                    hrp.CFrame = CFrame.new(-352.761902, -56.8626175, 7.06043243, 0, 0, -1, 0, 1, 0, 1, 0, 0)
-                    _G.CreateServerIndicator(desyncState.savedCFrame.Position)
-                end
-                if HAS_RAKNET_DESYNC then raknet.desync(true) end
-            end
-            
-            ShowNotification("DESYNC", "🌀 RakNet Desync ON [" .. desyncState.mode:upper() .. "]")
-        else
-            desyncState.frozenPosition = nil
-            desyncState.serverPosition = nil
-            
-            if desyncState.mode == "cathub" then
-                if HAS_RAKNET_DESYNC then raknet.desync(false) end
-                if hrp and desyncState.savedCFrame then
-                    hrp.CFrame = desyncState.savedCFrame
-                end
-                _G.DestroyServerIndicator()
-            end
-            
-            ShowNotification("DESYNC", "⛔ RakNet Desync OFF")
-        end
-        SaveConfig()
-    end
-
-    UserInputService.InputBegan:Connect(function(input, gp)
-        if gp then return end
-        local desyncKey = Enum.KeyCode[Config.DesyncKey] or Enum.KeyCode.G
-        if input.KeyCode == desyncKey then
-            _G.ToggleDesync()
-        end
-    end)
-
-    _G.CycleDesyncMode = function()
-        local modes = {}
-        if HAS_RAKNET_DESYNC then table.insert(modes, "cathub") end
-        if HAS_RAKNET_HOOK then
-            table.insert(modes, "behind")
-            table.insert(modes, "above")
-            table.insert(modes, "random")
-            table.insert(modes, "freeze")
-        end
-        if #modes == 0 then return end
-        
-        local currentIdx = 1
-        for i, m in ipairs(modes) do
-            if m == desyncState.mode then currentIdx = i; break end
-        end
-        local nextIdx = (currentIdx % #modes) + 1
-        
-        -- Si on quitte le mode cathub, on restaure la pos
-        if desyncState.active and desyncState.mode == "cathub" then
-            _G.ToggleDesync(false)
-        end
-        
-        desyncState.mode = modes[nextIdx]
-        Config.DesyncMode = desyncState.mode
-        desyncState.frozenPosition = nil
-        SaveConfig()
-        ShowNotification("DESYNC MODE", "🔄 " .. desyncState.mode:upper())
-    end
-
-    _G.SetDesyncDistance = function(dist)
-        dist = math.clamp(dist, 5, 100)
-        desyncState.desyncDistance = dist
-        Config.DesyncDistance = dist
-        SaveConfig()
-        ShowNotification("DESYNC", "📏 Distance: " .. dist .. " studs")
-    end
-
-    -- ── Desync No Anim Logic ──
-    local animConnection = nil
-    _G.ToggleDesyncNoAnim = function(active)
-        local char = LocalPlayer.Character
-        local hum = char and char:FindFirstChild("Humanoid")
-        if not hum then return end
-        
-        if active then
-            for _, track in pairs(hum:GetPlayingAnimationTracks()) do
-                track:Stop()
-            end
-            if animConnection then animConnection:Disconnect() end
-            animConnection = hum.AnimationPlayed:Connect(function(track)
-                track:Stop()
-            end)
-        else
-            if animConnection then
-                animConnection:Disconnect()
-                animConnection = nil
-            end
-        end
-    end
-    
-    if Config.DesyncNoAnim then
-        task.spawn(function()
-            task.wait(1)
-            _G.ToggleDesyncNoAnim(true)
-        end)
-    end
-
-    LocalPlayer.CharacterAdded:Connect(function(char)
-        if desyncState.active and desyncState.mode == "cathub" then
-            task.wait(0.5)
-            local hrp = char:WaitForChild("HumanoidRootPart", 5)
-            if hrp then
-                desyncState.savedCFrame = hrp.CFrame
-                hrp.CFrame = CFrame.new(-352.761902, -56.8626175, 7.06043243, 0, 0, -1, 0, 1, 0, 1, 0, 0)
-                _G.CreateServerIndicator(desyncState.savedCFrame.Position)
-            end
-            if HAS_RAKNET_DESYNC then raknet.desync(true) end
-        end
-        
-        if Config.DesyncNoAnim then
-            task.wait(0.5)
-            _G.ToggleDesyncNoAnim(true)
-        end
-    end)
-
-    ShowNotification("SPHYNX", "🌀 RakNet Desync Engine READY [" .. Config.DesyncKey .. "]")
-end)
-
 print("[SPHYNX HUB] ✅ Script fully loaded - all modules initialized.")
-warn("[SPHYNX HUB] Auto Desync on Steal: " .. tostring(Config.AutoDesyncOnSteal))
