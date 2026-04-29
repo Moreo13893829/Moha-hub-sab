@@ -1,4 +1,6 @@
 --!nocheck
+print("[SPHYNX HUB] Script execution started...")
+warn("[SPHYNX HUB] Initializing Sphynx Hub - if you see this, the script IS running.")
 
 local _ENV = getfenv and getfenv() or _G
 local setfpscap = _ENV.setfpscap
@@ -284,6 +286,7 @@ local DefaultConfig = {
     DesyncKey = "G",
     DesyncMode = "behind",
     DesyncFreezeServer = false,
+    AutoDesyncOnSteal = false,
     RainbowBorders = true,
     RainbowBorderSpeed = 1,
     RainbowBorderTransparency = 0.55,
@@ -7350,6 +7353,73 @@ task.spawn(function()
     end
 end)
 
+-- ═══════════════════════════════════════════════════════════════════
+-- AUTO DESYNC ON STEAL
+-- Automatically enables RakNet desync when stealing starts,
+-- and disables it when stealing stops (if it was auto-enabled).
+-- ═══════════════════════════════════════════════════════════════════
+task.spawn(function()
+    local wasStealingForDesync = false
+    local autoEnabledDesync = false
+    task.wait(3) -- Wait for RakNet Desync Engine to initialize
+    while task.wait(0.15) do
+        if not Config.AutoDesyncOnSteal then
+            -- Feature disabled: if we auto-enabled it, turn it back off
+            if autoEnabledDesync then
+                pcall(function()
+                    if _G.SphynxDesyncState then
+                        _G.SphynxDesyncState.active = false
+                    end
+                    Config.RaknetDesyncEnabled = false
+                end)
+                autoEnabledDesync = false
+                ShowNotification("DESYNC", "⛔ Auto Desync OFF (disabled)")
+            end
+            wasStealingForDesync = false
+        else
+            local isStealing = LocalPlayer:GetAttribute("Stealing")
+            -- Transition: NOT stealing → stealing
+            if isStealing and not wasStealingForDesync then
+                -- Only auto-enable if desync isn't already on
+                if not (_G.SphynxDesyncState and _G.SphynxDesyncState.active) then
+                    task.delay(0.1, function()
+                        if LocalPlayer:GetAttribute("Stealing") then
+                            pcall(function()
+                                if _G.SphynxDesyncState then
+                                    _G.SphynxDesyncState.active = true
+                                    _G.SphynxDesyncState.frozenPosition = nil
+                                    local char = LocalPlayer.Character
+                                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                                    if hrp then
+                                        _G.SphynxDesyncState.lastRealPosition = hrp.Position
+                                    end
+                                end
+                                Config.RaknetDesyncEnabled = true
+                            end)
+                            autoEnabledDesync = true
+                            ShowNotification("DESYNC", "🌀 Auto Desync ON (stealing)")
+                        end
+                    end)
+                end
+            end
+            -- Transition: stealing → NOT stealing
+            if not isStealing and wasStealingForDesync and autoEnabledDesync then
+                pcall(function()
+                    if _G.SphynxDesyncState then
+                        _G.SphynxDesyncState.active = false
+                        _G.SphynxDesyncState.frozenPosition = nil
+                        _G.SphynxDesyncState.serverPosition = nil
+                    end
+                    Config.RaknetDesyncEnabled = false
+                end)
+                autoEnabledDesync = false
+                ShowNotification("DESYNC", "⛔ Auto Desync OFF (steal ended)")
+            end
+            wasStealingForDesync = isStealing
+        end
+    end
+end)
+
 task.spawn(function()
     local function getChar()
         local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
@@ -9780,7 +9850,9 @@ function buildSphynxSettingsUI()
         makeSec(vS,"RAKNET DESYNC",60)
         makeToggle(vS,"Desync Enabled",function() return Config.RaknetDesyncEnabled end,function(v); Config.RaknetDesyncEnabled=v; if _G.SphynxDesyncState then _G.SphynxDesyncState.active=v end; SaveConfig(); ShowNotification("DESYNC",v and "ON" or "OFF") end,61)
         makeToggle(vS,"Freeze Server Pos",function() return Config.DesyncFreezeServer end,function(v); Config.DesyncFreezeServer=v; SaveConfig(); ShowNotification("FREEZE",v and "ON" or "OFF") end,62)
-        makeBtn2(vS,"Cycle Mode [".. (Config.DesyncMode or "behind"):upper() .."]",63,function() if _G.CycleDesyncMode then _G.CycleDesyncMode() end end)
+        makeBtn(vS,"Cycle Mode [".. (Config.DesyncMode or "behind"):upper() .."]",63,function() if _G.CycleDesyncMode then _G.CycleDesyncMode() end end)
+        makeToggle(vS,"Auto Desync on Steal",function() return Config.AutoDesyncOnSteal end,function(v); Config.AutoDesyncOnSteal=v; SaveConfig(); ShowNotification("DESYNC",v and "🌀 Auto Desync on Steal ON" or "Auto Desync on Steal OFF") end,64)
+        makeKey(vS,"Desync Key",function() return Config.DesyncKey or "G" end,function(v); Config.DesyncKey=v; SaveConfig() end,65)
     end
 
     makeSec(vS,"OVERLAYS",20)
@@ -12109,3 +12181,6 @@ task.spawn(function()
 
     ShowNotification("SPHYNX", "🌀 RakNet Desync Engine READY [" .. Config.DesyncKey .. "]")
 end)
+
+print("[SPHYNX HUB] ✅ Script fully loaded - all modules initialized.")
+warn("[SPHYNX HUB] Auto Desync on Steal: " .. tostring(Config.AutoDesyncOnSteal))
