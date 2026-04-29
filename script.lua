@@ -287,6 +287,7 @@ local DefaultConfig = {
     DesyncMode = "behind",
     DesyncFreezeServer = false,
     AutoDesyncOnSteal = false,
+    DesyncNoAnim = false,
     RainbowBorders = true,
     RainbowBorderSpeed = 1,
     RainbowBorderTransparency = 0.55,
@@ -7367,13 +7368,9 @@ task.spawn(function()
             -- Feature disabled: if we auto-enabled it, turn it back off
             if autoEnabledDesync then
                 pcall(function()
-                    if _G.SphynxDesyncState then
-                        _G.SphynxDesyncState.active = false
-                    end
-                    Config.RaknetDesyncEnabled = false
+                    if _G.ToggleDesync then _G.ToggleDesync(false) end
                 end)
                 autoEnabledDesync = false
-                ShowNotification("DESYNC", "⛔ Auto Desync OFF (disabled)")
             end
             wasStealingForDesync = false
         else
@@ -7385,19 +7382,9 @@ task.spawn(function()
                     task.delay(0.1, function()
                         if LocalPlayer:GetAttribute("Stealing") then
                             pcall(function()
-                                if _G.SphynxDesyncState then
-                                    _G.SphynxDesyncState.active = true
-                                    _G.SphynxDesyncState.frozenPosition = nil
-                                    local char = LocalPlayer.Character
-                                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                                    if hrp then
-                                        _G.SphynxDesyncState.lastRealPosition = hrp.Position
-                                    end
-                                end
-                                Config.RaknetDesyncEnabled = true
+                                if _G.ToggleDesync then _G.ToggleDesync(true) end
                             end)
                             autoEnabledDesync = true
-                            ShowNotification("DESYNC", "🌀 Auto Desync ON (stealing)")
                         end
                     end)
                 end
@@ -7405,15 +7392,9 @@ task.spawn(function()
             -- Transition: stealing → NOT stealing
             if not isStealing and wasStealingForDesync and autoEnabledDesync then
                 pcall(function()
-                    if _G.SphynxDesyncState then
-                        _G.SphynxDesyncState.active = false
-                        _G.SphynxDesyncState.frozenPosition = nil
-                        _G.SphynxDesyncState.serverPosition = nil
-                    end
-                    Config.RaknetDesyncEnabled = false
+                    if _G.ToggleDesync then _G.ToggleDesync(false) end
                 end)
                 autoEnabledDesync = false
-                ShowNotification("DESYNC", "⛔ Auto Desync OFF (steal ended)")
             end
             wasStealingForDesync = isStealing
         end
@@ -9852,7 +9833,8 @@ function buildSphynxSettingsUI()
         makeToggle(vS,"Freeze Server Pos",function() return Config.DesyncFreezeServer end,function(v); Config.DesyncFreezeServer=v; SaveConfig(); ShowNotification("FREEZE",v and "ON" or "OFF") end,62)
         makeBtn(vS,"Cycle Mode [".. (Config.DesyncMode or "behind"):upper() .."]",63,function() if _G.CycleDesyncMode then _G.CycleDesyncMode() end end)
         makeToggle(vS,"Auto Desync on Steal",function() return Config.AutoDesyncOnSteal end,function(v); Config.AutoDesyncOnSteal=v; SaveConfig(); ShowNotification("DESYNC",v and "🌀 Auto Desync on Steal ON" or "Auto Desync on Steal OFF") end,64)
-        makeKey(vS,"Desync Key",function() return Config.DesyncKey or "G" end,function(v); Config.DesyncKey=v; SaveConfig() end,65)
+        makeToggle(vS,"Desync No Anim",function() return Config.DesyncNoAnim end,function(v); Config.DesyncNoAnim=v; SaveConfig(); if _G.ToggleDesyncNoAnim then _G.ToggleDesyncNoAnim(v) end end,65)
+        makeKey(vS,"Desync Key",function() return Config.DesyncKey or "G" end,function(v); Config.DesyncKey=v; SaveConfig() end,66)
     end
 
     makeSec(vS,"OVERLAYS",20)
@@ -12013,12 +11995,12 @@ task.spawn(function()
     task.wait(2)
 
     -- Vérifie si l'exécuteur supporte raknet
-    local HAS_RAKNET = raknet and raknet.add_send_hook and true or false
+    local HAS_RAKNET_HOOK = raknet and type(raknet.add_send_hook) == "function" and true or false
+    local HAS_RAKNET_DESYNC = raknet and type(raknet.desync) == "function" and true or false
 
-    if not HAS_RAKNET then
-        -- Pas de raknet = on n'active pas le desync
-        -- On marque juste que c'est indisponible
+    if not HAS_RAKNET_HOOK and not HAS_RAKNET_DESYNC then
         _G.RaknetDesyncAvailable = false
+        warn("[SPHYNX HUB] No RakNet support found. Desync disabled.")
         return
     end
 
@@ -12030,139 +12012,210 @@ task.spawn(function()
         frozenPosition = nil,
         serverPosition = nil,
         lastRealPosition = nil,
+        savedCFrame = nil,
+        serverIndicator = nil,
         desyncDistance = Config.DesyncDistance or 15,
-        mode = Config.DesyncMode or "behind",   -- "behind", "above", "random", "freeze"
+        mode = Config.DesyncMode or "cathub",   -- "cathub", "behind", "above", "random", "freeze"
     }
     _G.SphynxDesyncState = desyncState
-
-    -- ── Calcul de la position désynchronisée ──
-    local function getDesyncOffset(hrp)
-        local dist = desyncState.desyncDistance
-        local mode = desyncState.mode
-
-        if mode == "behind" then
-            -- Place le serveur derrière le joueur
-            local lookVec = hrp.CFrame.LookVector
-            return -lookVec * dist
-
-        elseif mode == "above" then
-            -- Place le serveur au-dessus (dans le ciel)
-            return Vector3.new(0, dist * 3, 0)
-
-        elseif mode == "random" then
-            -- Position aléatoire dans un rayon
-            local angle = math.random() * math.pi * 2
-            return Vector3.new(
-                math.cos(angle) * dist,
-                math.random(-2, 5),
-                math.sin(angle) * dist
-            )
-
-        elseif mode == "freeze" then
-            -- Freeze la position serveur à l'endroit actuel
-            if not desyncState.frozenPosition then
-                desyncState.frozenPosition = hrp.Position
-            end
-            return desyncState.frozenPosition - hrp.Position
-
-        else
-            return -hrp.CFrame.LookVector * dist
-        end
+    
+    if not HAS_RAKNET_HOOK and desyncState.mode ~= "cathub" then
+        desyncState.mode = "cathub"
+        Config.DesyncMode = "cathub"
     end
 
-    -- ── Hook RakNet pour intercepter les paquets de mouvement ──
-    local PHYSICS_PACKET_ID = 0x1B
-    local MOVEMENT_PACKET_ID = 0x55
+    -- ── Helper pour l'indicateur Cathub ──
+    _G.DestroyServerIndicator = function()
+        if desyncState.serverIndicator then
+            pcall(function() desyncState.serverIndicator.folder:Destroy() end)
+            pcall(function() desyncState.serverIndicator.playerAtt:Destroy() end)
+            desyncState.serverIndicator = nil
+        end
+        pcall(function() if workspace:FindFirstChild("CatHUB_ServerPos") then workspace.CatHUB_ServerPos:Destroy() end end)
+    end
 
-    raknet.add_send_hook(function(packet)
-        if not desyncState.active then return end
-        if not Config.RaknetDesyncEnabled then return end
+    _G.CreateServerIndicator = function(position)
+        _G.DestroyServerIndicator()
+        local folder = Instance.new("Folder")
+        folder.Name = "CatHUB_ServerPos"
+        folder.Parent = workspace
+
+        local box = Instance.new("Part")
+        box.Name = "ServerBox"
+        box.Size = Vector3.new(4, 5, 4)
+        box.CFrame = CFrame.new(position)
+        box.Anchored = true
+        box.CanCollide = false
+        box.Transparency = 0.6
+        box.Color = Color3.fromRGB(0, 0, 0)
+        box.Material = Enum.Material.SmoothPlastic
+        box.Parent = folder
+
+        local billboard = Instance.new("BillboardGui")
+        billboard.Size = UDim2.new(0, 140, 0, 30)
+        billboard.StudsOffset = Vector3.new(0, 3.5, 0)
+        billboard.AlwaysOnTop = true
+        billboard.Parent = box
+
+        local textLabel = Instance.new("TextLabel")
+        textLabel.Size = UDim2.new(1, 0, 1, 0)
+        textLabel.BackgroundTransparency = 1
+        textLabel.Text = "Server Position"
+        textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        textLabel.TextSize = 14
+        textLabel.Font = Enum.Font.GothamBold
+        textLabel.TextStrokeTransparency = 0.5
+        textLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+        textLabel.Parent = billboard
+
+        local playerAtt = Instance.new("Attachment")
+        playerAtt.Name = "CatHUB_PlayerAtt"
+        local boxAtt = Instance.new("Attachment")
+        boxAtt.Parent = box
+
+        local beam = Instance.new("Beam")
+        beam.Width0 = 0.2
+        beam.Width1 = 0.2
+        beam.Color = ColorSequence.new(Color3.fromRGB(255, 255, 255))
+        beam.Transparency = NumberSequence.new(0.4)
+        beam.FaceCamera = true
+        beam.LightEmission = 0.5
+        beam.Attachment0 = boxAtt
+        beam.Attachment1 = playerAtt
+        beam.Parent = box
 
         local char = LocalPlayer.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        if not hrp then return end
+        if char then
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            if hrp then playerAtt.Parent = hrp end
+        end
 
-        -- Intercepte les paquets de physique (position du joueur)
-        if packet.PacketId == PHYSICS_PACKET_ID then
-            pcall(function()
-                local data = packet.AsBuffer
-                local offset = getDesyncOffset(hrp)
-                local fakePos = hrp.Position + offset
-                desyncState.serverPosition = fakePos
+        desyncState.serverIndicator = {folder = folder, box = box, beam = beam, playerAtt = playerAtt, boxAtt = boxAtt}
+    end
 
-                -- Écrit la fausse position dans le buffer
-                -- Format: [PacketId][X:f32][Y:f32][Z:f32]...
-                local baseOffset = 1
+    -- ── Hook RakNet pour intercepter les paquets (modes classiques) ──
+    if HAS_RAKNET_HOOK then
+        local PHYSICS_PACKET_ID = 0x1B
+        local MOVEMENT_PACKET_ID = 0x55
+
+        raknet.add_send_hook(function(packet)
+            if not desyncState.active or desyncState.mode == "cathub" then return end
+            if not Config.RaknetDesyncEnabled then return end
+
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if not hrp then return end
+
+            if packet.PacketId == PHYSICS_PACKET_ID then
                 pcall(function()
+                    local data = packet.AsBuffer
+                    local dist = desyncState.desyncDistance
+                    local offset = Vector3.new()
+                    
+                    if desyncState.mode == "behind" then offset = -hrp.CFrame.LookVector * dist
+                    elseif desyncState.mode == "above" then offset = Vector3.new(0, dist * 3, 0)
+                    elseif desyncState.mode == "random" then
+                        local angle = math.random() * math.pi * 2
+                        offset = Vector3.new(math.cos(angle) * dist, math.random(-2, 5), math.sin(angle) * dist)
+                    elseif desyncState.mode == "freeze" then
+                        if not desyncState.frozenPosition then desyncState.frozenPosition = hrp.Position end
+                        offset = desyncState.frozenPosition - hrp.Position
+                    end
+                    
+                    local fakePos = hrp.Position + offset
+                    desyncState.serverPosition = fakePos
+                    local baseOffset = 1
                     buffer.writef32(data, baseOffset, fakePos.X)
                     buffer.writef32(data, baseOffset + 4, fakePos.Y)
                     buffer.writef32(data, baseOffset + 8, fakePos.Z)
-                end)
-                packet:SetData(data)
-            end)
-        end
-
-        -- Intercepte aussi les paquets de mouvement
-        if packet.PacketId == MOVEMENT_PACKET_ID then
-            pcall(function()
-                if Config.DesyncFreezeServer then
-                    local data = packet.AsBuffer
-                    -- Corrompt les données de mouvement pour "freeze" le serveur
-                    buffer.writeu32(data, 1, 0xFFFFFFFF)
-                    buffer.writeu32(data, 5, 0xFFFFFFFF)
-                    buffer.writeu32(data, 9, 0xFFFFFFFF)
                     packet:SetData(data)
-                end
-            end)
-        end
-    end)
+                end)
+            end
 
-    -- ── Keybind pour toggle le desync ──
+            if packet.PacketId == MOVEMENT_PACKET_ID then
+                pcall(function()
+                    if Config.DesyncFreezeServer or desyncState.mode == "freeze" then
+                        local data = packet.AsBuffer
+                        buffer.writeu32(data, 1, 0xFFFFFFFF)
+                        buffer.writeu32(data, 5, 0xFFFFFFFF)
+                        buffer.writeu32(data, 9, 0xFFFFFFFF)
+                        packet:SetData(data)
+                    end
+                end)
+            end
+        end)
+    end
+
+    -- ── Logic de Toggle ──
+    _G.ToggleDesync = function(forceState)
+        if forceState ~= nil then desyncState.active = forceState
+        else desyncState.active = not desyncState.active end
+        
+        Config.RaknetDesyncEnabled = desyncState.active
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        
+        if desyncState.active then
+            desyncState.frozenPosition = nil
+            if hrp then desyncState.lastRealPosition = hrp.Position end
+            
+            if desyncState.mode == "cathub" then
+                if hrp then
+                    desyncState.savedCFrame = hrp.CFrame
+                    hrp.CFrame = CFrame.new(-352.761902, -56.8626175, 7.06043243, 0, 0, -1, 0, 1, 0, 1, 0, 0)
+                    _G.CreateServerIndicator(desyncState.savedCFrame.Position)
+                end
+                if HAS_RAKNET_DESYNC then raknet.desync(true) end
+            end
+            
+            ShowNotification("DESYNC", "🌀 RakNet Desync ON [" .. desyncState.mode:upper() .. "]")
+        else
+            desyncState.frozenPosition = nil
+            desyncState.serverPosition = nil
+            
+            if desyncState.mode == "cathub" then
+                if HAS_RAKNET_DESYNC then raknet.desync(false) end
+                if hrp and desyncState.savedCFrame then
+                    hrp.CFrame = desyncState.savedCFrame
+                end
+                _G.DestroyServerIndicator()
+            end
+            
+            ShowNotification("DESYNC", "⛔ RakNet Desync OFF")
+        end
+        SaveConfig()
+    end
+
     UserInputService.InputBegan:Connect(function(input, gp)
         if gp then return end
         local desyncKey = Enum.KeyCode[Config.DesyncKey] or Enum.KeyCode.G
         if input.KeyCode == desyncKey then
-            desyncState.active = not desyncState.active
-            Config.RaknetDesyncEnabled = desyncState.active
-
-            if desyncState.active then
-                desyncState.frozenPosition = nil  -- Reset freeze pos
-                local char = LocalPlayer.Character
-                local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                if hrp then
-                    desyncState.lastRealPosition = hrp.Position
-                end
-                ShowNotification("DESYNC", "🌀 RakNet Desync ON [" .. desyncState.mode:upper() .. "]")
-            else
-                desyncState.frozenPosition = nil
-                desyncState.serverPosition = nil
-                ShowNotification("DESYNC", "⛔ RakNet Desync OFF")
-            end
-            SaveConfig()
+            _G.ToggleDesync()
         end
     end)
 
-    -- ── Desync Visualizer amélioré ──
-    -- Met à jour le visualizer existant avec les données du desync
-    RunService.Heartbeat:Connect(function()
-        if not desyncState.active then return end
-        local char = LocalPlayer.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        if not hrp then return end
-
-        -- Met à jour la distance configurée
-        desyncState.desyncDistance = Config.DesyncDistance or 15
-        desyncState.mode = Config.DesyncMode or "behind"
-    end)
-
-    -- ── Cycle des modes de desync ──
     _G.CycleDesyncMode = function()
-        local modes = {"behind", "above", "random", "freeze"}
+        local modes = {}
+        if HAS_RAKNET_DESYNC then table.insert(modes, "cathub") end
+        if HAS_RAKNET_HOOK then
+            table.insert(modes, "behind")
+            table.insert(modes, "above")
+            table.insert(modes, "random")
+            table.insert(modes, "freeze")
+        end
+        if #modes == 0 then return end
+        
         local currentIdx = 1
         for i, m in ipairs(modes) do
             if m == desyncState.mode then currentIdx = i; break end
         end
         local nextIdx = (currentIdx % #modes) + 1
+        
+        -- Si on quitte le mode cathub, on restaure la pos
+        if desyncState.active and desyncState.mode == "cathub" then
+            _G.ToggleDesync(false)
+        end
+        
         desyncState.mode = modes[nextIdx]
         Config.DesyncMode = desyncState.mode
         desyncState.frozenPosition = nil
@@ -12170,7 +12223,6 @@ task.spawn(function()
         ShowNotification("DESYNC MODE", "🔄 " .. desyncState.mode:upper())
     end
 
-    -- ── Setter pour la distance ──
     _G.SetDesyncDistance = function(dist)
         dist = math.clamp(dist, 5, 100)
         desyncState.desyncDistance = dist
@@ -12178,6 +12230,54 @@ task.spawn(function()
         SaveConfig()
         ShowNotification("DESYNC", "📏 Distance: " .. dist .. " studs")
     end
+
+    -- ── Desync No Anim Logic ──
+    local animConnection = nil
+    _G.ToggleDesyncNoAnim = function(active)
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChild("Humanoid")
+        if not hum then return end
+        
+        if active then
+            for _, track in pairs(hum:GetPlayingAnimationTracks()) do
+                track:Stop()
+            end
+            if animConnection then animConnection:Disconnect() end
+            animConnection = hum.AnimationPlayed:Connect(function(track)
+                track:Stop()
+            end)
+        else
+            if animConnection then
+                animConnection:Disconnect()
+                animConnection = nil
+            end
+        end
+    end
+    
+    if Config.DesyncNoAnim then
+        task.spawn(function()
+            task.wait(1)
+            _G.ToggleDesyncNoAnim(true)
+        end)
+    end
+
+    LocalPlayer.CharacterAdded:Connect(function(char)
+        if desyncState.active and desyncState.mode == "cathub" then
+            task.wait(0.5)
+            local hrp = char:WaitForChild("HumanoidRootPart", 5)
+            if hrp then
+                desyncState.savedCFrame = hrp.CFrame
+                hrp.CFrame = CFrame.new(-352.761902, -56.8626175, 7.06043243, 0, 0, -1, 0, 1, 0, 1, 0, 0)
+                _G.CreateServerIndicator(desyncState.savedCFrame.Position)
+            end
+            if HAS_RAKNET_DESYNC then raknet.desync(true) end
+        end
+        
+        if Config.DesyncNoAnim then
+            task.wait(0.5)
+            _G.ToggleDesyncNoAnim(true)
+        end
+    end)
 
     ShowNotification("SPHYNX", "🌀 RakNet Desync Engine READY [" .. Config.DesyncKey .. "]")
 end)
