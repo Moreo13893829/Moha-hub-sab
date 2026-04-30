@@ -59,6 +59,49 @@ do
     print("sphynx hub NAO E SOURCE DO LETHAL")
 end
 
+-- ═══════════════════════════════════════════════════════════════
+-- ANTI-DETECTION: hookmetamethod __namecall (anti-kick/ban/log)
+-- ═══════════════════════════════════════════════════════════════
+do
+    if hookmetamethod and newcclosure and checkcaller and getnamecallmethod then
+        local oldNamecall
+        oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+            local method = getnamecallmethod()
+            if not checkcaller() then
+                -- Block server-side kicks
+                if method == "Kick" or method == "kick" then
+                    return nil
+                end
+                -- Block suspicious remote calls (ban/detect/log)
+                if method == "FireServer" or method == "InvokeServer" then
+                    local remoteName = ""
+                    pcall(function() remoteName = self.Name:lower() end)
+                    if remoteName:find("ban") or remoteName:find("kick") or remoteName:find("detect") or remoteName:find("log") then
+                        return nil
+                    end
+                end
+            end
+            return oldNamecall(self, ...)
+        end))
+        print("[SPHYNX HUB] Anti-detection hookmetamethod active")
+    else
+        warn("[SPHYNX HUB] hookmetamethod not available - anti-detection limited")
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- ANTI-IDLE KICK
+-- ═══════════════════════════════════════════════════════════════
+do
+    local LP = game:GetService("Players").LocalPlayer
+    local VIM = game:GetService("VirtualInputManager")
+    LP.Idled:Connect(function()
+        VIM:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
+        task.wait(0.1)
+        VIM:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+    end)
+end
+
 Services = {
     Players = game:GetService("Players"),
     RunService = game:GetService("RunService"),
@@ -260,6 +303,19 @@ DefaultConfig = {
 
 
 local Config = DefaultConfig
+
+Config.MutationColors = {
+    Cursed = Color3.fromRGB(255, 50, 50),
+    Gold = Color3.fromRGB(255, 215, 0),
+    Diamond = Color3.fromRGB(0, 255, 255),
+    YinYang = Color3.fromRGB(220, 220, 220),
+    Rainbow = Color3.fromRGB(255, 100, 200),
+    Lava = Color3.fromRGB(255, 100, 20),
+    Candy = Color3.fromRGB(255, 105, 180),
+    Bloodrot = Color3.fromRGB(139, 0, 0),
+    Radioactive = Color3.fromRGB(0, 255, 0),
+    Divine = Color3.fromRGB(255, 255, 255)
+}
 
 if isfile and isfile(FileName) then
     pcall(function()
@@ -2132,16 +2188,10 @@ task.spawn(function()
                     local bStroke = Instance.new("UIStroke", btn)
                     bStroke.Color = Theme.Accent1; bStroke.Thickness = 1; bStroke.Transparency = 1
 
-                    local MUT_COLORS_UI = {
-                        Cursed=Color3.fromRGB(200,0,0), Gold=Color3.fromRGB(255,215,0),
-                        Diamond=Color3.fromRGB(0,255,255), YinYang=Color3.fromRGB(220,220,220),
-                        Rainbow=Color3.fromRGB(255,100,200), Lava=Color3.fromRGB(255,100,20),
-                        Candy=Color3.fromRGB(255,105,180), Divine=Color3.fromRGB(255,255,255)
-                    }
                     local hasMut = petData.mutation and petData.mutation ~= "None"
                     local isEsteira = petData.source == "ESTEIRA"
                     local barCol = isEsteira and Color3.fromRGB(0,220,200)
-                        or (hasMut and (MUT_COLORS_UI[petData.mutation] or Color3.fromRGB(210,130,255)) or Theme.Accent2)
+                        or (hasMut and (Config.MutationColors[petData.mutation] or Color3.fromRGB(210,130,255)) or Theme.Accent2)
                     local itemBar = Instance.new("Frame", btn)
                     itemBar.Size = UDim2.new(0,3,1,-8); itemBar.Position = UDim2.new(0,3,0,4)
                     itemBar.BackgroundColor3 = barCol; itemBar.BorderSizePixel = 0
@@ -2557,6 +2607,56 @@ task.spawn(function()
         return h
     end
 
+    -- ═══════════════════════════════════════════════════════════════
+    -- PRIORITY ALERT CHECK (extracted from 2 duplicate blocks → 1 function)
+    -- ═══════════════════════════════════════════════════════════════
+    local function _checkAndShowPriorityAlert()
+        if hasShownPriorityAlert or not Config.AlertsEnabled then return end
+        task.spawn(function()
+            local foundPriorityPet = nil
+            for i = 1, #PRIORITY_LIST do
+                local searchName = PRIORITY_LIST[i]:lower()
+                for _, pet in ipairs(allAnimalsCache) do
+                    if pet.name and pet.name:lower() == searchName then
+                        foundPriorityPet = pet
+                        break
+                    end
+                end
+                if foundPriorityPet then break end
+            end
+            if foundPriorityPet then
+                local ownerUsername = foundPriorityPet.owner
+                local ownerPlayer = nil
+                local plot = Workspace:FindFirstChild("Plots") and Workspace.Plots:FindFirstChild(foundPriorityPet.plot)
+                if plot then
+                    local sync = Synchronizer
+                    if not sync then
+                        local Packages = ReplicatedStorage:FindFirstChild("Packages")
+                        if Packages then
+                            local ok, syncModule = pcall(function() return require(Packages:WaitForChild("Synchronizer")) end)
+                            if ok then sync = syncModule end
+                        end
+                    end
+                    if sync then
+                        local ok, ch = pcall(function() return sync:Get(plot.Name) end)
+                        if ok and ch then
+                            local owner = ch:Get("Owner")
+                            if owner then
+                                if typeof(owner) == "Instance" and owner:IsA("Player") then
+                                    ownerPlayer = owner; ownerUsername = owner.Name
+                                elseif type(owner) == "table" and owner.Name then
+                                    ownerUsername = owner.Name; ownerPlayer = Players:FindFirstChild(owner.Name)
+                                end
+                            end
+                        end
+                    end
+                end
+                if not ownerPlayer and ownerUsername then ownerPlayer = Players:FindFirstChild(ownerUsername) end
+                ShowPriorityAlert(foundPriorityPet.name, foundPriorityPet.genText, foundPriorityPet.mutation, ownerUsername)
+            end
+        end)
+    end
+
     local function scanSinglePlot(plot)
         local changed = false
         pcall(function()
@@ -2593,71 +2693,8 @@ task.spawn(function()
             SharedState.ListNeedsRedraw = true
             
             
-            if not hasShownPriorityAlert and Config.AlertsEnabled then
-                task.spawn(function()
-                    
-                    local foundPriorityPet = nil
-                    for i = 1, #PRIORITY_LIST do
-                        local priorityName = PRIORITY_LIST[i]
-                        local searchName = priorityName:lower()
-                        
-                        
-                        for _, pet in ipairs(allAnimalsCache) do
-                            if pet.name and pet.name:lower() == searchName then
-                                foundPriorityPet = pet
-                                break
-                            end
-                        end
-                        
-                        
-                        if foundPriorityPet then
-                            break
-                        end
-                    end
-                    
-                    if foundPriorityPet then
-                        
-                        local ownerUsername = foundPriorityPet.owner
-                        local ownerPlayer = nil
-                        
-                        local plot = Workspace:FindFirstChild("Plots") and Workspace.Plots:FindFirstChild(foundPriorityPet.plot)
-                        if plot then
-                            
-                            local sync = Synchronizer
-                            if not sync then
-                                local Packages = ReplicatedStorage:FindFirstChild("Packages")
-                                if Packages then
-                                    local ok, syncModule = pcall(function() return require(Packages:WaitForChild("Synchronizer")) end)
-                                    if ok then sync = syncModule end
-                                end
-                            end
-                            
-                            if sync then
-                                local ok, ch = pcall(function() return sync:Get(plot.Name) end)
-                                if ok and ch then
-                                    local owner = ch:Get("Owner")
-                                    if owner then
-                                        if typeof(owner) == "Instance" and owner:IsA("Player") then
-                                            ownerPlayer = owner
-                                            ownerUsername = owner.Name
-                                        elseif type(owner) == "table" and owner.Name then
-                                            ownerUsername = owner.Name
-                                            ownerPlayer = Players:FindFirstChild(owner.Name)
-                                        end
-                                    end
-                                end
-                            end
-                        end
-                        
-                        
-                        if not ownerPlayer and ownerUsername then
-                            ownerPlayer = Players:FindFirstChild(ownerUsername)
-                        end
-                        
-                        ShowPriorityAlert(foundPriorityPet.name, foundPriorityPet.genText, foundPriorityPet.mutation, ownerUsername)
-                    end
-                end)
-            end
+            -- Priority alert check (deduplicated — single function)
+            _checkAndShowPriorityAlert()
         end
     end
 
@@ -2807,20 +2844,16 @@ task.spawn(function()
         local duelStatusText = isInDuel and "IN DUEL" or "NOT IN DUEL"
         local duelStatusColor = isInDuel and Color3.fromRGB(255, 0, 0) or Color3.fromRGB(0, 255, 0)
         
-        local mutationColors = {
-            ["rainbow"] = Color3.fromRGB(255, 0, 255),
-            ["bloodrot"] = Color3.fromRGB(139, 0, 0),
-            ["candy"] = Color3.fromRGB(255, 105, 180),
-            ["radioactive"] = Color3.fromRGB(0, 255, 0),
-            ["cursed"] = Color3.fromRGB(255, 50, 50),
-            ["gold"] = Color3.fromRGB(255, 215, 0),
-            ["diamond"] = Color3.fromRGB(0, 255, 255),
-            ["yinyang"] = Color3.fromRGB(255, 255, 255),
-            ["lava"] = Color3.fromRGB(255, 100, 20)
-        }
-        
-        local normalizedMutation = mutation and mutation:gsub("%s+", ""):lower() or ""
-        local color = mutationColors[normalizedMutation] or Color3.fromRGB(0, 170, 255)
+        -- Use global mutation colors
+        local function getMutColor(mutStr)
+            if not mutStr or mutStr == "None" or mutStr == "N/A" then return Color3.fromRGB(0, 170, 255) end
+            local mutNorm = mutStr:gsub("%s+", "")
+            for k, v in pairs(Config.MutationColors) do
+                if k:lower() == mutNorm:lower() then return v end
+            end
+            return Color3.fromRGB(0, 170, 255)
+        end
+        local color = getMutColor(mutation)
         
         local existing = PlayerGui:FindFirstChild("SphynxPriorityAlert")
         if existing then existing:Destroy() end
@@ -2929,73 +2962,13 @@ task.spawn(function()
         end)
     end
     
-    
+    -- Priority alert polling loop (uses deduplicated function)
     task.spawn(function()
-        task.wait(0.5)  
+        task.wait(0.5)
         while true do
-            task.wait(0.5)  
-            if not hasShownPriorityAlert and Config.AlertsEnabled and #allAnimalsCache > 0 then
-                
-                local foundPriorityPet = nil
-                for i = 1, #PRIORITY_LIST do
-                    local priorityName = PRIORITY_LIST[i]
-                    local searchName = priorityName:lower()
-                    
-                    
-                    for _, pet in ipairs(allAnimalsCache) do
-                        if pet.name and pet.name:lower() == searchName then
-                            foundPriorityPet = pet
-                            break
-                        end
-                    end
-                    
-                    
-                    if foundPriorityPet then
-                        break
-                    end
-                end
-                
-                if foundPriorityPet then
-                    
-                    local ownerUsername = foundPriorityPet.owner
-                    local ownerPlayer = nil
-                    
-                    local plot = Workspace:FindFirstChild("Plots") and Workspace.Plots:FindFirstChild(foundPriorityPet.plot)
-                    if plot then
-                        
-                        local sync = Synchronizer
-                        if not sync then
-                            local Packages = ReplicatedStorage:FindFirstChild("Packages")
-                            if Packages then
-                                local ok, syncModule = pcall(function() return require(Packages:WaitForChild("Synchronizer")) end)
-                                if ok then sync = syncModule end
-                            end
-                        end
-                        
-                        if sync then
-                            local ok, ch = pcall(function() return sync:Get(plot.Name) end)
-                            if ok and ch then
-                                local owner = ch:Get("Owner")
-                                if owner then
-                                    if typeof(owner) == "Instance" and owner:IsA("Player") then
-                                        ownerPlayer = owner
-                                        ownerUsername = owner.Name
-                                    elseif type(owner) == "table" and owner.Name then
-                                        ownerUsername = owner.Name
-                                        ownerPlayer = Players:FindFirstChild(owner.Name)
-                                    end
-                                end
-                            end
-                        end
-                    end
-                    
-                    
-                    if not ownerPlayer and ownerUsername then
-                        ownerPlayer = Players:FindFirstChild(ownerUsername)
-                    end
-                    
-                    ShowPriorityAlert(foundPriorityPet.name, foundPriorityPet.genText, foundPriorityPet.mutation, ownerUsername)
-                end
+            task.wait(0.5)
+            if #allAnimalsCache > 0 then
+                _checkAndShowPriorityAlert()
             end
         end
     end)
@@ -3082,8 +3055,13 @@ task.spawn(function()
         end
     end)
 
+    local lastAutoStealTick = 0
     RunService.Heartbeat:Connect(function()
         if not autoStealEnabled then return end
+        local now = tick()
+        if now - lastAutoStealTick < 0.05 then return end
+        lastAutoStealTick = now
+        
         if instantStealEnabled then
             if activeProgressTween then activeProgressTween:Cancel(); activeProgressTween = nil end
             progressBarFill.Size = UDim2.new(1, 0, 1, 0)
@@ -3216,15 +3194,9 @@ task.spawn(function()
             currentBeam.Attachment1 = currentAtt1
             currentBeam.Enabled = true
 
-            local MUT_COLORS_TRACE = {
-                Cursed=Color3.fromRGB(200,0,0), Gold=Color3.fromRGB(255,215,0),
-                Diamond=Color3.fromRGB(0,255,255), YinYang=Color3.fromRGB(220,220,220),
-                Rainbow=Color3.fromRGB(255,100,200), Lava=Color3.fromRGB(255,100,20),
-                Candy=Color3.fromRGB(255,105,180), Divine=Color3.fromRGB(255,255,255)
-            }
             local col = Theme.Accent2
             if not Config.LineToBase then
-                col = (best and best.mutation and MUT_COLORS_TRACE[best.mutation]) or Theme.Accent1
+                col = (best and best.mutation and Config.MutationColors[best.mutation]) or Theme.Accent1
             end
             currentBeam.Color = ColorSequence.new(col)
         else
@@ -6477,18 +6449,6 @@ task.spawn(function()
     brainrotESPFolder.Parent = Workspace
     local brainrotBillboards = {}
     local hiddenOverheads = {}
-    local MUT_COLORS = {
-        Cursed = Color3.fromRGB(255, 50, 50),
-        Gold = Color3.fromRGB(255, 215, 0),
-        Diamond = Color3.fromRGB(0, 255, 255),
-        YinYang = Color3.fromRGB(220, 220, 220),
-        Rainbow = Color3.fromRGB(255, 100, 200),
-        Lava = Color3.fromRGB(255, 100, 20),
-        Candy = Color3.fromRGB(255, 105, 180),
-        Bloodrot = Color3.fromRGB(139, 0, 0),
-        Radioactive = Color3.fromRGB(0, 255, 0),
-        Divine = Color3.fromRGB(255, 255, 255)
-    }
     
     local function createBrainrotBillboard(data)
         local bb = Instance.new("BillboardGui")
@@ -6500,7 +6460,7 @@ task.spawn(function()
         bb.MaxDistance = 3000
         
         local hasMut = data.mutation and data.mutation ~= "None" and data.mutation ~= "N/A"
-        local color = hasMut and (MUT_COLORS[data.mutation] or Color3.fromRGB(200, 100, 255)) or Color3.fromRGB(0, 255, 150)
+        local color = hasMut and (Config.MutationColors[data.mutation] or Color3.fromRGB(200, 100, 255)) or Color3.fromRGB(0, 255, 150)
         
         local container = Instance.new("Frame", bb)
         container.Size = UDim2.new(1, 0, 1, 0)
