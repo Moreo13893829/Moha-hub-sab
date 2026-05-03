@@ -196,7 +196,7 @@ trackConnection(MinimizeBtn.MouseButton1Click:Connect(ToggleMinimize))
 local StatusDot = create("Frame", { Name = "StatusDot", Parent = BottomBar, Position = UDim2.new(0, 15, 0.5, -4), Size = UDim2.new(0, 8, 0, 8), BackgroundColor3 = Theme.Accent, BorderSizePixel = 0 })
 addCorner(StatusDot, 10)
 local StatusText = create("TextLabel", { Parent = BottomBar, Position = UDim2.new(0, 32, 0, 0), Size = UDim2.new(0, 180, 1, 0), BackgroundTransparency = 1, Text = "Waiting for logs", TextColor3 = Theme.TextSecondary, TextSize = 12, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left })
-create("TextLabel", { Parent = BottomBar, Position = UDim2.new(0.5, 0, 0, 0), Size = UDim2.new(0.5, -15, 1, 0), BackgroundTransparency = 1, Text = "therealroyalcrown.gg", TextColor3 = Theme.TextSecondary, TextSize = 12, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Right })
+create("TextLabel", { Parent = BottomBar, Position = UDim2.new(0.5, 0, 0, 0), Size = UDim2.new(0.5, -15, 1, 0), BackgroundTransparency = 1, Text = "THE BEST FREE AJ", TextColor3 = Theme.TextSecondary, TextSize = 12, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Right })
 
 local function SetStatus(active)
     StatusText.Text = active and "Notifier is active" or "Waiting for logs"
@@ -212,11 +212,18 @@ local function createHeader(parent, text, order)
     create("TextLabel", { Parent = parent, Size = UDim2.new(1, 0, 0, 20), BackgroundTransparency = 1, Text = text, TextColor3 = Theme.TextSecondary, TextSize = 11, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = order })
 end
 
+local function createSettingBox(parent, order)
+    local box = create("Frame", { Parent = parent, Size = UDim2.new(1, 0, 0, 40), BackgroundColor3 = Theme.ButtonBg, LayoutOrder = order })
+    addCorner(box, 8) addStroke(box, Theme.Outline, 1, 0.2)
+    return box
+end
+
 local function createToggle(parent, text, key, default, order)
     SettingsState[key] = default
-    local frame = create("Frame", { Parent = parent, Size = UDim2.new(1, 0, 0, 32), BackgroundTransparency = 1, LayoutOrder = order })
-    create("TextLabel", { Parent = frame, Size = UDim2.new(0.6, 0, 1, 0), BackgroundTransparency = 1, Text = text, TextColor3 = Theme.TextPrimary, TextSize = 13, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left })
-    local tgl = create("TextButton", { Parent = frame, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, 0, 0.5, 0), Size = UDim2.new(0, 38, 0, 20), BackgroundColor3 = default and Theme.Accent or Theme.ButtonBg, Text = "" })
+    local box = createSettingBox(parent, order)
+    create("TextLabel", { Parent = box, Position = UDim2.new(0, 12, 0, 0), Size = UDim2.new(0.6, 0, 1, 0), BackgroundTransparency = 1, Text = text, TextColor3 = Theme.TextPrimary, TextSize = 13, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left })
+    
+    local tgl = create("TextButton", { Parent = box, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -10, 0.5, 0), Size = UDim2.new(0, 38, 0, 20), BackgroundColor3 = default and Theme.Accent or Theme.Background, Text = "" })
     addCorner(tgl, 10) addStroke(tgl, Theme.Outline, 1, 0.2)
     local dot = create("Frame", { Parent = tgl, Position = default and UDim2.new(1, -16, 0.5, -7) or UDim2.new(0, 2, 0.5, -7), Size = UDim2.new(0, 14, 0, 14), BackgroundColor3 = Color3.new(1,1,1) })
     addCorner(dot, 10)
@@ -224,24 +231,26 @@ local function createToggle(parent, text, key, default, order)
     tgl.MouseButton1Click:Connect(function()
         SettingsState[key] = not SettingsState[key]
         local s = SettingsState[key]
-        TweenService:Create(tgl, TweenInfo.new(0.2), {BackgroundColor3 = s and Theme.Accent or Theme.ButtonBg}):Play()
+        TweenService:Create(tgl, TweenInfo.new(0.2), {BackgroundColor3 = s and Theme.Accent or Theme.Background}):Play()
         TweenService:Create(dot, TweenInfo.new(0.2), {Position = s and UDim2.new(1, -16, 0.5, -7) or UDim2.new(0, 2, 0.5, -7)}):Play()
     end)
 end
 
 local function createInput(id, text, default, order)
-    local frame = create("Frame", { Parent = GeneralTab, Size = UDim2.new(1, 0, 0, 32), BackgroundTransparency = 1, LayoutOrder = order })
-    create("TextLabel", { Parent = frame, Size = UDim2.new(0.5, 0, 1, 0), BackgroundTransparency = 1, Text = text, TextColor3 = Theme.TextPrimary, TextSize = 13, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left })
-    local bg = create("Frame", { Parent = frame, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, 0, 0.5, 0), Size = UDim2.new(0, 140, 0, 26), BackgroundColor3 = Theme.ButtonBg })
+    local box = createSettingBox(GeneralTab, order)
+    create("TextLabel", { Parent = box, Position = UDim2.new(0, 12, 0, 0), Size = UDim2.new(0.5, 0, 1, 0), BackgroundTransparency = 1, Text = text, TextColor3 = Theme.TextPrimary, TextSize = 13, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left })
+    
+    local bg = create("Frame", { Parent = box, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -10, 0.5, 0), Size = UDim2.new(0, 130, 0, 28), BackgroundColor3 = Theme.Background })
     addCorner(bg, 6) addStroke(bg, Theme.Outline, 1, 0.2)
-    local box = create("TextBox", { Parent = bg, Size = UDim2.new(1, -10, 1, 0), Position = UDim2.new(0, 5, 0, 0), BackgroundTransparency = 1, Text = default, TextColor3 = Theme.TextSecondary, TextSize = 12, Font = Enum.Font.Gotham, ClearTextOnFocus = false })
-    SettingsInputs[id] = box
+    local boxInput = create("TextBox", { Parent = bg, Size = UDim2.new(1, -10, 1, 0), Position = UDim2.new(0, 5, 0, 0), BackgroundTransparency = 1, Text = default, TextColor3 = Theme.TextSecondary, TextSize = 12, Font = Enum.Font.Gotham, ClearTextOnFocus = false })
+    SettingsInputs[id] = boxInput
 end
 
 local function createKeybind(text, default, order)
-    local frame = create("Frame", { Parent = GeneralTab, Size = UDim2.new(1, 0, 0, 32), BackgroundTransparency = 1, LayoutOrder = order })
-    create("TextLabel", { Parent = frame, Size = UDim2.new(0.5, 0, 1, 0), BackgroundTransparency = 1, Text = text, TextColor3 = Theme.TextPrimary, TextSize = 13, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left })
-    local btn = create("TextButton", { Parent = frame, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, 0, 0.5, 0), Size = UDim2.new(0, 140, 0, 26), BackgroundColor3 = Theme.ButtonBg, Text = default, TextColor3 = Theme.TextSecondary, TextSize = 12, Font = Enum.Font.Gotham })
+    local box = createSettingBox(GeneralTab, order)
+    create("TextLabel", { Parent = box, Position = UDim2.new(0, 12, 0, 0), Size = UDim2.new(0.5, 0, 1, 0), BackgroundTransparency = 1, Text = text, TextColor3 = Theme.TextPrimary, TextSize = 13, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left })
+    
+    local btn = create("TextButton", { Parent = box, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -10, 0.5, 0), Size = UDim2.new(0, 130, 0, 28), BackgroundColor3 = Theme.Background, Text = default, TextColor3 = Theme.TextSecondary, TextSize = 12, Font = Enum.Font.Gotham })
     addCorner(btn, 6) addStroke(btn, Theme.Outline, 1, 0.2)
     
     local listening = false
@@ -265,8 +274,9 @@ createToggle(GeneralTab, "Notification Sound", "Sound", true, 4)
 createInput("SoundID", "Sound ID", "1342568949118398", 5)
 createHeader(GeneralTab, "JOIN SETTINGS", 6)
 createInput("Retries", "Retries", "10", 7)
-createInput("MinValue", "Min Join Value", "100", 8)
-createToggle(GeneralTab, "Auto-Join", "AutoJoin", false, 9)
+createToggle(GeneralTab, "Auto Retries", "AutoRetries", true, 8)
+createInput("MinValue", "Min Join Value", "100", 9)
+createToggle(GeneralTab, "Auto-Join", "AutoJoin", false, 10)
 
 -- [[ Live Feed System ]]
 local FeedFilters = create("Frame", { Parent = LiveFeedTab, Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, LayoutOrder = 1 })
@@ -308,17 +318,22 @@ for i, f in ipairs(filters) do
 end
 
 -- [[ About Tab ]]
+local aboutOrder = 0
 local function createAboutBox(title, value, isLink)
-    createHeader(AboutTab, title, 1)
-    local box = create("Frame", { Parent = AboutTab, Size = UDim2.new(1, 0, 0, 45), BackgroundColor3 = Theme.ButtonBg })
+    aboutOrder = aboutOrder + 1
+    createHeader(AboutTab, title, aboutOrder)
+    
+    aboutOrder = aboutOrder + 1
+    local box = create("Frame", { Parent = AboutTab, Size = UDim2.new(1, 0, 0, 45), BackgroundColor3 = Theme.ButtonBg, LayoutOrder = aboutOrder })
     addCorner(box, 8) addStroke(box, Theme.Outline, 1, 0.2)
-    create("TextLabel", { Parent = box, Position = UDim2.new(0, 12, 0, 0), Size = UDim2.new(1, -100, 1, 0), BackgroundTransparency = 1, Text = value, TextColor3 = Theme.TextPrimary, TextSize = 13, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left })
+    
+    local lbl = create("TextLabel", { Parent = box, Position = UDim2.new(0, 12, 0, 0), Size = UDim2.new(1, -110, 1, 0), BackgroundTransparency = 1, Text = value, TextColor3 = Theme.TextPrimary, TextSize = 13, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left })
     
     if isLink then
-        local btn = create("TextButton", { Parent = box, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -10, 0.5, 0), Size = UDim2.new(0, 70, 0, 26), BackgroundColor3 = Theme.TopBar, Text = "Copy", TextColor3 = Theme.TextPrimary, TextSize = 12, Font = Enum.Font.GothamBold })
-        addCorner(btn, 6)
+        local btn = create("TextButton", { Parent = box, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -10, 0.5, 0), Size = UDim2.new(0, 85, 0, 28), BackgroundColor3 = Theme.TopBar, Text = "Copy Link", TextColor3 = Theme.TextSecondary, TextSize = 11, Font = Enum.Font.GothamBold })
+        addCorner(btn, 6) addStroke(btn, Theme.Outline, 1, 0.2)
         btn.MouseButton1Click:Connect(function()
-            if setclipboard then setclipboard(value) btn.Text = "Copied!" task.wait(2) btn.Text = "Copy" end
+            if setclipboard then setclipboard(value) btn.Text = "Copied!" task.wait(2) btn.Text = "Copy Link" end
         end)
     end
 end
@@ -328,7 +343,8 @@ createAboutBox("DISCORD", "https://discord.gg/RBABRNaVQ", true)
 
 -- [[ Filters Tab (Empty for User) ]]
 createHeader(FiltersTab, "OCS", 1)
-createHeader(FiltersTab, "HIGH VALUE ITEMS", 2)
+local OCSBox = create("Frame", { Parent = FiltersTab, Size = UDim2.new(1, 0, 0, 5), BackgroundTransparency = 1, LayoutOrder = 2 }) -- Spacer
+createHeader(FiltersTab, "HIGH VALUE ITEMS", 3)
 
 -- [[ Data Loop ]]
 task.spawn(function()
