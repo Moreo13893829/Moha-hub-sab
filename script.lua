@@ -163,7 +163,7 @@ ZenoCorner.CornerRadius = UDim.new(1, 0)  --
 ZenoCorner.Parent = ZenoToggleBtn
 
 local ZenoStroke = Instance.new("UIStroke")
-ZenoStroke.Color = Color3.fromRGB(204, 17, 17)  -- red border
+ZenoStroke.Color = Color3.fromRGB(140, 80, 255)  -- red border
 ZenoStroke.Thickness = 2
 ZenoStroke.Parent = ZenoToggleBtn
 
@@ -227,7 +227,7 @@ Main.Parent = ScreenGui
 Instance.new("UICorner",Main).CornerRadius = UDim.new(0,8)
 
 local Stroke = Instance.new("UIStroke",Main)
-Stroke.Color = Color3.fromRGB(255, 0, 0)
+Stroke.Color = Color3.fromRGB(140, 80, 255)
 Stroke.Thickness = 1.8
 Stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 
@@ -1422,11 +1422,11 @@ unlockBaseUI = nil
 
 -- 🔴 RED THEME
 local Theme = {
-    Background = Color3.fromRGB(20, 10, 10),
-    Surface = Color3.fromRGB(35, 15, 15),
-    Accent1 = Color3.fromRGB(255, 60, 60),
-    Accent2 = Color3.fromRGB(150, 0, 0),
-    TextPrimary = Color3.fromRGB(255, 240, 240),
+    Background = Color3.fromRGB(10, 8, 14),
+    Surface = Color3.fromRGB(22, 16, 32),
+    Accent1 = Color3.fromRGB(170, 70, 255),
+    Accent2 = Color3.fromRGB(100, 40, 180),
+    TextPrimary = Color3.fromRGB(245, 240, 255),
 }
 
 -- Check if object is in your plot
@@ -3408,30 +3408,30 @@ end)
 
 
 local COLORS = {
-    Background = Color3.fromRGB(14, 6, 6),
-    Panel = Color3.fromRGB(18, 8, 8),
-    Border = Color3.fromRGB(180, 25, 25),
-    Accent = Color3.fromRGB(200, 30, 30),
-    AccentBright = Color3.fromRGB(230, 40, 40),
-    TabActive = Color3.fromRGB(190, 25, 25),
-    TabInactive = Color3.fromRGB(35, 15, 15),
-    TabHover = Color3.fromRGB(60, 20, 20),
-    ToggleOn = Color3.fromRGB(200, 30, 30),
-    ToggleOff = Color3.fromRGB(50, 20, 20),
+    Background = Color3.fromRGB(10, 8, 14),
+    Panel = Color3.fromRGB(15, 12, 22),
+    Border = Color3.fromRGB(140, 80, 255),
+    Accent = Color3.fromRGB(170, 70, 255),
+    AccentBright = Color3.fromRGB(200, 120, 255),
+    TabActive = Color3.fromRGB(150, 60, 255),
+    TabInactive = Color3.fromRGB(28, 24, 38),
+    TabHover = Color3.fromRGB(50, 40, 70),
+    ToggleOn = Color3.fromRGB(160, 60, 255),
+    ToggleOff = Color3.fromRGB(35, 30, 48),
     KnobOn = Color3.fromRGB(255, 255, 255),
-    KnobOff = Color3.fromRGB(140, 140, 140),
-    Text = Color3.fromRGB(240, 240, 240),
-    TextDim = Color3.fromRGB(160, 160, 160),
-    SectionTitle = Color3.fromRGB(140, 140, 140),
-    SectionBG = Color3.fromRGB(22, 10, 10),
-    SectionBorder = Color3.fromRGB(120, 20, 20),
-    BindText = Color3.fromRGB(255, 80, 80),
-    BindBG = Color3.fromRGB(60, 15, 15),
-    MiniPanel = Color3.fromRGB(18, 8, 8),
-    MiniTitle = Color3.fromRGB(30, 10, 10),
-    MiniTitleBorder = Color3.fromRGB(140, 20, 20),
-    ButtonBG = Color3.fromRGB(40, 12, 12),
-    ButtonBorder = Color3.fromRGB(120, 20, 20),
+    KnobOff = Color3.fromRGB(150, 140, 160),
+    Text = Color3.fromRGB(245, 240, 255),
+    TextDim = Color3.fromRGB(165, 155, 185),
+    SectionTitle = Color3.fromRGB(180, 150, 255),
+    SectionBG = Color3.fromRGB(18, 14, 26),
+    SectionBorder = Color3.fromRGB(80, 50, 140),
+    BindText = Color3.fromRGB(255, 120, 200),
+    BindBG = Color3.fromRGB(45, 25, 75),
+    MiniPanel = Color3.fromRGB(15, 12, 22),
+    MiniTitle = Color3.fromRGB(22, 16, 32),
+    MiniTitleBorder = Color3.fromRGB(100, 60, 180),
+    ButtonBG = Color3.fromRGB(35, 20, 60),
+    ButtonBorder = Color3.fromRGB(100, 60, 180),
     ButtonHover = Color3.fromRGB(65, 18, 18),
     ButtonText = Color3.fromRGB(240, 240, 240),
     Ready = Color3.fromRGB(80, 200, 80),
@@ -3859,7 +3859,7 @@ function OpenInstantStealUI(anchorPanel)
 
     -- Animated border stroke
     local mainStroke = Instance.new("UIStroke")
-    mainStroke.Color = Color3.fromRGB(160, 20, 20)
+    mainStroke.Color = Color3.fromRGB(140, 80, 255)
     mainStroke.Thickness = 1.5
     mainStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     mainStroke.Parent = main
@@ -3871,8 +3871,8 @@ function OpenInstantStealUI(anchorPanel)
             local alpha = (math.sin(t * 1.2) + 1) / 2
             mainStroke.Color = Color3.fromRGB(
                 math.floor(120 + alpha * (220 - 120)),
-                math.floor(10  + alpha * (30  - 10)),
-                10
+                math.floor(60  + alpha * (80  - 60)),
+                math.floor(240 + alpha * (255 - 240))
             )
         end
     end)
@@ -4029,7 +4029,7 @@ header = Instance.new("Frame")
     Instance.new("UICorner", keybindBtn).CornerRadius = UDim.new(0, 7)
 
     local kbStroke = Instance.new("UIStroke")
-    kbStroke.Color = Color3.fromRGB(80, 20, 20)
+    kbStroke.Color = Color3.fromRGB(80, 50, 140)
     kbStroke.Thickness = 1.2
     kbStroke.Parent = keybindBtn
 
@@ -4039,7 +4039,7 @@ header = Instance.new("Frame")
         listening = true
         keybindBtn.Text = "Press any key..."
         keybindBtn.TextColor3 = Color3.fromRGB(255, 200, 60)
-        TweenService:Create(kbStroke, TweenInfo.new(0.15), {Color = Color3.fromRGB(180, 30, 30)}):Play()
+        TweenService:Create(kbStroke, TweenInfo.new(0.15), {Color = Color3.fromRGB(170, 70, 255)}):Play()
 
         local conn
         conn = UserInputService.InputBegan:Connect(function(input_obj, gpe)
@@ -4059,7 +4059,7 @@ header = Instance.new("Frame")
             Config.sliders.ist_keybind = input_obj.KeyCode.Name
             saveConfig()
             keybindBtn.TextColor3 = Color3.fromRGB(215, 215, 230)
-            TweenService:Create(kbStroke, TweenInfo.new(0.15), {Color = Color3.fromRGB(80, 20, 20)}):Play()
+            TweenService:Create(kbStroke, TweenInfo.new(0.15), {Color = Color3.fromRGB(80, 50, 140)}):Play()
             task.wait()
             listening = false
         end)
@@ -4113,7 +4113,7 @@ header = Instance.new("Frame")
         Instance.new("UICorner", row).CornerRadius = UDim.new(0, 7)
 
         local rowStroke = Instance.new("UIStroke")
-        rowStroke.Color = Color3.fromRGB(80, 20, 20)
+        rowStroke.Color = Color3.fromRGB(80, 50, 140)
         rowStroke.Thickness = 1.2
         rowStroke.Parent = row
 
@@ -4154,7 +4154,7 @@ header = Instance.new("Frame")
         end
 
         local function applyState(on, animate)
-            local targetColor = on and Color3.fromRGB(180, 20, 20) or Color3.fromRGB(50, 18, 18)
+            local targetColor = on and Color3.fromRGB(170, 70, 255) or Color3.fromRGB(35, 30, 48)
             local targetKnobX = on and UDim2.new(0, 19, 0.5, -5) or UDim2.new(0, 3, 0.5, -5)
             if animate then
                 TweenService:Create(pillBg, TweenInfo.new(0.18), {BackgroundColor3 = targetColor}):Play()
@@ -4879,7 +4879,7 @@ corner.CornerRadius = UDim.new(0, 12)
 corner.Parent = creditsFrame
 
 local stroke = Instance.new("UIStroke")
-stroke.Color = Color3.fromRGB(200, 30, 30)
+stroke.Color = Color3.fromRGB(140, 80, 255)
 stroke.Thickness = 1.5
 stroke.Parent = creditsFrame
 
@@ -4899,7 +4899,7 @@ local credits = Instance.new("TextLabel")
 credits.Size = UDim2.new(1, 0, 0, 18)
 credits.Position = UDim2.new(0, 0, 0, 30)
 credits.BackgroundTransparency = 1
-credits.Text = "SheeshV2 | DatShawn | Headless"
+credits.Text = "Brainrot10071985 | mohamed79109 | randomguy12v"
 credits.Font = Enum.Font.GothamBlack
 credits.TextSize = isMobile and 9 or 13
 credits.TextColor3 = Color3.fromRGB(180, 180, 180)
@@ -5283,7 +5283,7 @@ local function createMiniToggle(parent, label, order, onToggle, bindId)
         BorderSizePixel = 0,
     }, row)
     addCorner(switch, 9)
-    addStroke(switch, Color3.fromRGB(100, 25, 25), 1)
+    addStroke(switch, Color3.fromRGB(80, 50, 140), 1)
 
     local knob = createInstance("Frame", {
         Name = "Knob",
@@ -6149,7 +6149,7 @@ do
         BorderSizePixel = 0,
     }, row)
     addCorner(switch, 9)
-    addStroke(switch, Color3.fromRGB(100, 25, 25), 1)
+    addStroke(switch, Color3.fromRGB(80, 50, 140), 1)
 
     local knob = createInstance("Frame", {
         Name = "Knob",
@@ -6267,7 +6267,7 @@ do
             BorderSizePixel = 0,
         }, aiRow)
         addCorner(aiSwitch, 9)
-        addStroke(aiSwitch, Color3.fromRGB(100, 25, 25), 1)
+        addStroke(aiSwitch, Color3.fromRGB(80, 50, 140), 1)
 
         local aiKnob = createInstance("Frame", {
             Name = "Knob",
@@ -7399,7 +7399,7 @@ local function buildToggleRow(item, parent)
         BorderSizePixel = 0,
     }, row)
     addCorner(switch, 10)
-    addStroke(switch, Color3.fromRGB(80, 30, 30), 1)
+    addStroke(switch, Color3.fromRGB(80, 50, 140), 1)
 
     local knob = createInstance("Frame", {
         Name = "Knob",
