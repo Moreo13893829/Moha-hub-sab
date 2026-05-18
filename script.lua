@@ -35,6 +35,80 @@ local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
 local player = LocalPlayer
+
+-- =============================================
+-- REFRACTORED & OPTIMIZED ENGINE HELPERS
+-- =============================================
+local gethui = rawget(getfenv(), "gethui") or _G.gethui
+local CoreGui = game:GetService("CoreGui")
+local function getUiParent()
+    if gethui then
+        local success, res = pcall(gethui)
+        if success and res then return res end
+    end
+    if CoreGui then
+        return CoreGui
+    end
+    return LocalPlayer:WaitForChild("PlayerGui")
+end
+
+local function getRandomName()
+    local success, guid = pcall(function()
+        return HttpService:GenerateGUID(false)
+    end)
+    if success and guid then
+        return guid
+    end
+    return "Zeno_" .. tostring(math.random(100000, 999999))
+end
+
+local function teleportHRP(target)
+    local lp = LocalPlayer
+    local character = lp.Character or lp.CharacterAdded:Wait()
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    
+    local targetCFrame = typeof(target) == "CFrame" and target or CFrame.new(target)
+    local targetPosition = targetCFrame.Position
+    
+    if lp.RequestStreamAroundAsync then
+        pcall(function()
+            lp:RequestStreamAroundAsync(targetPosition)
+        end)
+    end
+    
+    hrp.AssemblyLinearVelocity = Vector3.zero
+    hrp.AssemblyAngularVelocity = Vector3.zero
+    
+    local distance = (hrp.Position - targetPosition).Magnitude
+    if distance > 100 then
+        local speed = 500
+        local duration = math.clamp(distance / speed, 0.05, 0.4)
+        local ti = TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local tween = TweenService:Create(hrp, ti, {CFrame = targetCFrame})
+        
+        local parts = {}
+        for _, p in ipairs(character:GetDescendants()) do
+            if p:IsA("BasePart") and not p.Anchored then
+                p.Anchored = true
+                table.insert(parts, p)
+            end
+        end
+        
+        tween:Play()
+        tween.Completed:Wait()
+        
+        for _, p in ipairs(parts) do
+            p.Anchored = false
+        end
+    else
+        local ti = TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local tween = TweenService:Create(hrp, ti, {CFrame = targetCFrame})
+        tween:Play()
+        tween.Completed:Wait()
+    end
+end
+
 local setToggleVisual = nil
 local OpenInstantStealUI = nil
 local AntiRagdollEnabled = false
@@ -80,7 +154,7 @@ end
 local function openAdminSpammerUI()
 _G.AdminSpammerRunning = true
 
--- 🔥 REPLACE ALL CONFIG CODE WITH THIS (put at top, line ~100)
+-- ðŸ”¥ REPLACE ALL CONFIG CODE WITH THIS (put at top, line ~100)
 
 configData = Config.spammer or configData
 
@@ -132,15 +206,17 @@ local function runCommandOnPlayer(commandName, target)
 	fireButton(commandButton)
 end
 
-pcall(function()
-    LocalPlayer.PlayerGui:FindFirstChild("ZenoAdminPanel"):Destroy()
-end)
+if _G.ZenoAdminPanelInstance then
+    pcall(function() _G.ZenoAdminPanelInstance:Destroy() end)
+    _G.ZenoAdminPanelInstance = nil
+end
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+ScreenGui.Parent = getUiParent()
 ScreenGui.ResetOnSpawn = false
-ScreenGui.Name = "ZenoAdminPanel"
+ScreenGui.Name = getRandomName()
 ScreenGui.DisplayOrder = 999999
+_G.ZenoAdminPanelInstance = ScreenGui
 -- =============================================
 -- ZENO TOGGLE BUTTON (ON UI - TOP RIGHT)
 -- =============================================
@@ -150,7 +226,7 @@ ZenoToggleBtn.Size = isMobile and UDim2.new(0, 80, 0, 32) or UDim2.new(0, 90, 0,
 ZenoToggleBtn.Position = UDim2.new(1, isMobile and -88 or -98, 0, 8)
 ZenoToggleBtn.BackgroundColor3 = Color3.fromRGB(10, 0, 0)
 ZenoToggleBtn.BackgroundTransparency = 0.28  -- black with ~72% opacity = transparency
-ZenoToggleBtn.Text = "Zeno ▼"
+ZenoToggleBtn.Text = "Zeno â–¼"
 ZenoToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 ZenoToggleBtn.Font = Enum.Font.GothamBold
 ZenoToggleBtn.TextSize = isMobile and 13 or 15
@@ -186,11 +262,11 @@ ZenoToggleBtn.MouseButton1Click:Connect(function()
         MainFrame.Visible = true
         uiScale.Scale = 0.3
         TweenService:Create(uiScale, TweenInfo.new(0.35), {Scale = 1}):Play()
-        ZenoToggleBtn.Text = "Zeno ▼"
+        ZenoToggleBtn.Text = "Zeno â–¼"
     else
         TweenService:Create(uiScale, TweenInfo.new(0.25), {Scale = 0.3}):Play()
         task.delay(0.25, function() MainFrame.Visible = false end)
-        ZenoToggleBtn.Text = "Zeno ▲"
+        ZenoToggleBtn.Text = "Zeno â–²"
     end
 end)
 
@@ -202,11 +278,11 @@ ZenoToggleBtn.InputBegan:Connect(function(input_obj)
             MainFrame.Visible = true
             uiScale.Scale = 0.3
             TweenService:Create(uiScale, TweenInfo.new(0.35), {Scale = 1}):Play()
-            ZenoToggleBtn.Text = "Zeno ▼"
+            ZenoToggleBtn.Text = "Zeno â–¼"
         else
             TweenService:Create(uiScale, TweenInfo.new(0.25), {Scale = 0.3}):Play()
             task.delay(0.25, function() MainFrame.Visible = false end)
-            ZenoToggleBtn.Text = "Zeno ▲"
+            ZenoToggleBtn.Text = "Zeno â–²"
         end
     end
 end)
@@ -220,20 +296,22 @@ local Main = Instance.new("Frame")
 Main.Size = UDim2.new(0, frameWidth, 0, frameHeight)
 Main.Position = UDim2.new(0.5, -frameWidth/2, 0.5, -frameHeight/2)
 Main.AnchorPoint = Vector2.new(0.5, 0.5)
-Main.BackgroundColor3 = Color3.fromRGB(18,18,18)
-Main.BackgroundTransparency = 0.08
+Main.BackgroundColor3 = Color3.fromRGB(12, 12, 16)
+Main.BackgroundTransparency = 0.15
 Main.Active = true
 Main.Parent = ScreenGui
 Instance.new("UICorner",Main).CornerRadius = UDim.new(0,8)
 
 local Stroke = Instance.new("UIStroke",Main)
-Stroke.Color = Color3.fromRGB(140, 80, 255)
-Stroke.Thickness = 1.8
+Stroke.Color = Color3.fromRGB(140, 82, 255)
+Stroke.Thickness = 1
+Stroke.Transparency = 0.3
 Stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 
 local Top = Instance.new("Frame",Main)
-Top.Size = UDim2.new(1,0,0,38)
-Top.BackgroundColor3 = Color3.fromRGB(22,22,22)
+Top.Size = UDim2.new(1,0,0,42)
+Top.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
+Top.BackgroundTransparency = 0.2
 Instance.new("UICorner",Top).CornerRadius = UDim.new(0,8)
 
 -- Mobile drag handle
@@ -245,38 +323,38 @@ DragHandle.BackgroundTransparency = 1
 DragHandle.Text = "⋮⋮"
 DragHandle.Font = Enum.Font.GothamBold
 DragHandle.TextSize = 12
-DragHandle.TextColor3 = Color3.fromRGB(150,150,150)
+DragHandle.TextColor3 = Color3.fromRGB(160, 160, 200)
 DragHandle.TextXAlignment = Enum.TextXAlignment.Center
 
 local Title = Instance.new("TextLabel",Top)
 Title.Size = UDim2.new(1,-55,1,0)
-Title.Position = UDim2.new(0,8,0,0)
+Title.Position = UDim2.new(0,30,0,0)
 Title.BackgroundTransparency = 1
 Title.Text = "ZENO SPAMMER"
-Title.TextColor3 = Color3.new(1,1,1)
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = isMobile and 12 or 13
 Title.TextXAlignment = Enum.TextXAlignment.Left
 
 local Minimize = Instance.new("TextButton",Top)
-Minimize.Size = UDim2.new(0,24,0,24)
-Minimize.Position = UDim2.new(1,-30,0.5,-12)
-Minimize.BackgroundColor3 = Color3.fromRGB(40,40,40)
+Minimize.Size = UDim2.new(0,22,0,22)
+Minimize.Position = UDim2.new(1,-28,0.5,-11)
+Minimize.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
 Minimize.Text = "-"
 Minimize.TextColor3 = Color3.new(1,1,1)
 Minimize.Font = Enum.Font.GothamBold
 Minimize.TextSize = 14
-Instance.new("UICorner",Minimize)
+Instance.new("UICorner",Minimize).CornerRadius = UDim.new(0, 6)
 
 local ToggleUI = Instance.new("TextButton", Top)
-ToggleUI.Size = UDim2.new(0, 95, 0, 24)
-ToggleUI.Position = UDim2.new(1, -135, 0.5, -12)
-ToggleUI.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+ToggleUI.Size = UDim2.new(0, 95, 0, 22)
+ToggleUI.Position = UDim2.new(1, -130, 0.5, -11)
+ToggleUI.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
 ToggleUI.Text = "TOGGLE: " .. configData.ToggleUIKeybind
 ToggleUI.TextColor3 = Color3.new(1, 1, 1)
 ToggleUI.Font = Enum.Font.GothamBold
 ToggleUI.TextSize = isMobile and 10 or 11
-Instance.new("UICorner", ToggleUI)
+Instance.new("UICorner", ToggleUI).CornerRadius = UDim.new(0, 6)
 
 
 
@@ -492,12 +570,19 @@ end
 local function CreatePlayerRow(plr)
 	local Row = Instance.new("Frame",PlayerList)
 	Row.Size = UDim2.new(1,0,0,36)
-	Row.BackgroundColor3 = Color3.fromRGB(28,28,28)
-	Instance.new("UICorner",Row)
+	Row.BackgroundColor3 = Color3.fromRGB(20, 20, 28)
+	Row.BackgroundTransparency = 0.4
+	Instance.new("UICorner",Row).CornerRadius = UDim.new(0, 6)
+
+	local RowStroke = Instance.new("UIStroke", Row)
+	RowStroke.Color = Color3.fromRGB(140, 82, 255)
+	RowStroke.Thickness = 1
+	RowStroke.Transparency = 0.85
+	RowStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 
 	local Avatar = Instance.new("ImageLabel",Row)
-	Avatar.Size = UDim2.new(0,28,0,28)
-	Avatar.Position = UDim2.new(0,6,0.5,-14)
+	Avatar.Size = UDim2.new(0,26,0,26)
+	Avatar.Position = UDim2.new(0,6,0.5,-13)
 	Avatar.BackgroundTransparency = 1
 	Avatar.Image = Players:GetUserThumbnailAsync(plr.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size420x420)
 	local Corner = Instance.new("UICorner",Avatar)
@@ -508,7 +593,7 @@ local function CreatePlayerRow(plr)
 	Name.Position = UDim2.new(0,40,0,0)
 	Name.BackgroundTransparency = 1
 	Name.Text = plr.Name
-	Name.TextColor3 = Color3.fromRGB(220,220,220)
+	Name.TextColor3 = Color3.fromRGB(225, 225, 235)
 	Name.Font = Enum.Font.GothamBold
 	Name.TextSize = isMobile and 11 or 12
 	Name.TextXAlignment = Enum.TextXAlignment.Left
@@ -516,22 +601,36 @@ local function CreatePlayerRow(plr)
 	local Semi = Instance.new("TextButton",Row)
 	Semi.Size = UDim2.new(0,48,0,22)
 	Semi.Position = UDim2.new(1,-110,0.5,-11)
-	Semi.BackgroundColor3 = Color3.fromRGB(45,45,45)
+	Semi.BackgroundColor3 = Color3.fromRGB(35, 35, 48)
 	Semi.Text = "SEMI ("..configData.SemiKeybind..")"
 	Semi.TextColor3 = Color3.new(1,1,1)
 	Semi.Font = Enum.Font.GothamBold
 	Semi.TextSize = isMobile and 9 or 10
-	Instance.new("UICorner",Semi)
+	Instance.new("UICorner",Semi).CornerRadius = UDim.new(0, 6)
 
 	local Full = Instance.new("TextButton",Row)
 	Full.Size = UDim2.new(0,48,0,22)
 	Full.Position = UDim2.new(1,-56,0.5,-11)
-	Full.BackgroundColor3 = Color3.fromRGB(255,255,255)
-	Full.TextColor3 = Color3.fromRGB(0,0,0)
+	Full.BackgroundColor3 = Color3.fromRGB(140, 82, 255)
+	Full.TextColor3 = Color3.new(1,1,1)
 	Full.Text = "FULL ("..configData.FullKeybind..")"
 	Full.Font = Enum.Font.GothamBold
 	Full.TextSize = isMobile and 9 or 10
-	Instance.new("UICorner",Full)
+	Instance.new("UICorner",Full).CornerRadius = UDim.new(0, 6)
+
+	Semi.MouseEnter:Connect(function()
+		TweenService:Create(Semi, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(48, 48, 65)}):Play()
+	end)
+	Semi.MouseLeave:Connect(function()
+		TweenService:Create(Semi, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(35, 35, 48)}):Play()
+	end)
+
+	Full.MouseEnter:Connect(function()
+		TweenService:Create(Full, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(160, 100, 255)}):Play()
+	end)
+	Full.MouseLeave:Connect(function()
+		TweenService:Create(Full, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(140, 82, 255)}):Play()
+	end)
 
 	-- Mobile touch support
 	Semi.InputBegan:Connect(function(input_obj)
@@ -574,14 +673,21 @@ Bottom.BackgroundTransparency = 1
 local Check = Instance.new("TextButton",Bottom)
 Check.Size = UDim2.new(0,18,0,18)
 Check.Position = UDim2.new(0,8,0.5,-9)
-Check.BackgroundColor3 = BalloonEnabled and Color3.fromRGB(255,255,255) or Color3.fromRGB(40,40,40)
+Check.BackgroundColor3 = BalloonEnabled and Color3.fromRGB(140, 82, 255) or Color3.fromRGB(30, 30, 40)
 Check.Text = ""
-Instance.new("UICorner",Check)
+Instance.new("UICorner",Check).CornerRadius = UDim.new(0, 4)
+
+local CheckStroke = Instance.new("UIStroke", Check)
+CheckStroke.Color = Color3.fromRGB(140, 82, 255)
+CheckStroke.Thickness = 1
+CheckStroke.Transparency = 0.5
+CheckStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+
 Check.InputBegan:Connect(function(input_obj)
 	if input_obj.UserInputType == Enum.UserInputType.MouseButton1 or input_obj.UserInputType == Enum.UserInputType.Touch then
 		BalloonEnabled = not BalloonEnabled
 		configData.BalloonEnabled = BalloonEnabled
-		Check.BackgroundColor3 = BalloonEnabled and Color3.fromRGB(255,255,255) or Color3.fromRGB(40,40,40)
+		Check.BackgroundColor3 = BalloonEnabled and Color3.fromRGB(140, 82, 255) or Color3.fromRGB(30, 30, 40)
 		saveConfig()
 	end
 end)
@@ -592,19 +698,32 @@ Label.Position = UDim2.new(0,30,0,0)
 Label.BackgroundTransparency = 1
 Label.Text = "Balloon On AP Spam"
 Label.TextColor3 = Color3.fromRGB(200,200,200)
-Label.Font = Enum.Font.Gotham
+Label.Font = Enum.Font.GothamMedium
 Label.TextSize = isMobile and 11 or 12
 Label.TextXAlignment = Enum.TextXAlignment.Left
 
 local Refresh = Instance.new("TextButton",Bottom)
 Refresh.Size = UDim2.new(0,65,0,22)
 Refresh.Position = UDim2.new(1,-75,0.5,-11)
-Refresh.BackgroundColor3 = Color3.fromRGB(40,40,40)
+Refresh.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
 Refresh.Text = "Refresh"
 Refresh.TextColor3 = Color3.new(1,1,1)
 Refresh.Font = Enum.Font.GothamBold
 Refresh.TextSize = isMobile and 10 or 11
-Instance.new("UICorner",Refresh)
+Instance.new("UICorner",Refresh).CornerRadius = UDim.new(0, 6)
+
+local RefreshStroke = Instance.new("UIStroke", Refresh)
+RefreshStroke.Color = Color3.fromRGB(140, 82, 255)
+RefreshStroke.Thickness = 1
+RefreshStroke.Transparency = 0.6
+RefreshStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+
+Refresh.MouseEnter:Connect(function()
+	TweenService:Create(Refresh, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(45, 45, 58)}):Play()
+end)
+Refresh.MouseLeave:Connect(function()
+	TweenService:Create(Refresh, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(30, 30, 40)}):Play()
+end)
 Refresh.InputBegan:Connect(function(input_obj)
 	if input_obj.UserInputType == Enum.UserInputType.MouseButton1 or input_obj.UserInputType == Enum.UserInputType.Touch then
 		RefreshPlayers()
@@ -751,15 +870,15 @@ saveConfig = function()
         end)
         if success then
         else
-            warn("💾 Save failed:", err)
+            warn("ðŸ’¾ Save failed:", err)
         end
     else
-        print("💾 writefile not available")
+        print("ðŸ’¾ writefile not available")
     end
 end
 
 loadConfig = function()
-    print("📂 Loading config...")
+    print("ðŸ“‚ Loading config...")
     if readfile and isfile and isfile(CONFIG_FILE) then
         local success, data = pcall(function()
             return HttpService:JSONDecode(readfile(CONFIG_FILE))
@@ -773,14 +892,14 @@ loadConfig = function()
                 SemiKeybind = "F", FullKeybind = "Y", 
                 ToggleUIKeybind = "F4", BalloonEnabled = false
             }
-            print("📂 Loaded config from file!")
+            print("ðŸ“‚ Loaded config from file!")
             Toggles = Config.toggles
             configData = Config.spammer
         else
-            print("📂 Config file corrupt, using defaults")
+            print("ðŸ“‚ Config file corrupt, using defaults")
         end
     else
-        print("📂 No config file found, starting fresh")
+        print("ðŸ“‚ No config file found, starting fresh")
     end
 end
 
@@ -964,7 +1083,11 @@ local function initializeESP()
     end
 end
 
+local cachedPlayerBase = nil
 local function findPlayerBase()
+    if cachedPlayerBase and cachedPlayerBase.Parent == workspace:FindFirstChild("Plots") then
+        return cachedPlayerBase
+    end
     local plots = workspace:FindFirstChild("Plots")
     if not plots then return nil end
 
@@ -973,6 +1096,7 @@ local function findPlayerBase()
         if sign then
             local yourBase = sign:FindFirstChild("YourBase")
             if yourBase and yourBase.Enabled then
+                cachedPlayerBase = plot
                 return plot
             end
         end
@@ -1082,7 +1206,7 @@ local function createNameTag(model, petName)
         end
     end
 
-    local bb = Instance.new("BillboardGui") -- ✅ FIX
+    local bb = Instance.new("BillboardGui") -- âœ… FIX
     bb.Name = "PetNameTag"
     bb.Size = UDim2.new(0, 190, 0, 40)
     bb.StudsOffset = Vector3.new(0, 1.1, 0)
@@ -1144,9 +1268,13 @@ local function scanPlots()
     local plots = workspace:FindFirstChild("Plots")
     if not plots then return end
 
-    for _, plot in ipairs(plots:GetDescendants()) do
+    local descendants = plots:GetDescendants()
+    for i, plot in ipairs(descendants) do
         if plot:IsA("Model") then
             checkForRarePet(plot)
+        end
+        if i % 20 == 0 then
+            task.wait(math.random(0.05, 0.15))
         end
     end
 end
@@ -1261,7 +1389,7 @@ usernameLabel.Parent = frame
     table.insert(PlayerESPData[player], billboard)
 end
 
--- 🔥 SIMPLIFIED - NO DISTANCE UPDATE NEEDED
+-- ðŸ”¥ SIMPLIFIED - NO DISTANCE UPDATE NEEDED
 function startPlayerESP()
     -- Create ESP for existing players
     for _, player in pairs(Players:GetPlayers()) do
@@ -1370,12 +1498,36 @@ end
 
 local function instaFirePrompt(prompt)
     if not prompt then return end
+    local originalDist = prompt.MaxActivationDistance
+    local originalLOS = prompt.RequiresLineOfSight
+    local originalClickable = prompt.ClickablePrompt
+    
+    prompt.MaxActivationDistance = 9999
+    prompt.RequiresLineOfSight = false
+    prompt.ClickablePrompt = true
+    
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local originalCFrame = hrp and hrp.CFrame
+    local promptPart = prompt.Parent
+    
     task.spawn(function()
         pcall(function()
-            fireproximityprompt(prompt, 10000)
+            if hrp and promptPart and promptPart:IsA("BasePart") then
+                hrp.CFrame = CFrame.new(promptPart.Position)
+            end
+            
+            fireproximityprompt(prompt)
             prompt:InputHoldBegin()
             task.wait(0.04)
             prompt:InputHoldEnd()
+            
+            if hrp and originalCFrame then
+                hrp.CFrame = originalCFrame
+            end
+            prompt.MaxActivationDistance = originalDist
+            prompt.RequiresLineOfSight = originalLOS
+            prompt.ClickablePrompt = originalClickable
         end)
     end)
 end
@@ -1416,11 +1568,11 @@ do -- X-Ray scope
 -- =============================================
 
 -- =============================================
--- 🔥 COMPLETE UNLOCK BASE SYSTEM (FIXED)
+-- ðŸ”¥ COMPLETE UNLOCK BASE SYSTEM (FIXED)
 -- =============================================
 unlockBaseUI = nil
 
--- 🔴 RED THEME
+-- ðŸ”´ RED THEME
 local Theme = {
     Background = Color3.fromRGB(10, 8, 14),
     Surface = Color3.fromRGB(22, 16, 32),
@@ -1521,7 +1673,18 @@ local function triggerClosestUnlock(yLevel, maxY)
     if targetPrompt then
         print("🔓 UNLOCKING BASE - Floor:", yLevel)
         local originalDist = targetPrompt.MaxActivationDistance
+        local originalLOS = targetPrompt.RequiresLineOfSight
+        local originalClickable = targetPrompt.ClickablePrompt
+        
         targetPrompt.MaxActivationDistance = 9999
+        targetPrompt.RequiresLineOfSight = false
+        targetPrompt.ClickablePrompt = true
+
+        local originalCFrame = hrp and hrp.CFrame
+        
+        if hrp and targetPrompt.Parent and targetPrompt.Parent:IsA("BasePart") then
+            hrp.CFrame = CFrame.new(targetPrompt.Parent.Position)
+        end
 
         if fireproximityprompt then
             fireproximityprompt(targetPrompt)
@@ -1531,17 +1694,20 @@ local function triggerClosestUnlock(yLevel, maxY)
             targetPrompt:InputEnded(Enum.UserInputType.MouseButton1)
         end
 
-        task.delay(0.2, function()
-            targetPrompt.MaxActivationDistance = originalDist
-        end)
+        if hrp and originalCFrame then
+            hrp.CFrame = originalCFrame
+        end
+        targetPrompt.MaxActivationDistance = originalDist
+        targetPrompt.RequiresLineOfSight = originalLOS
+        targetPrompt.ClickablePrompt = originalClickable
     else
-        print("❌ No unlock prompt found for floor:", yLevel)
+        print("âŒ No unlock prompt found for floor:", yLevel)
     end
 end
 
--- 🔥 MAIN UI CREATOR FUNCTION (TOGGLE READY)
+-- ðŸ”¥ MAIN UI CREATOR FUNCTION (TOGGLE READY)
 function createUnlockBaseUI()
-    print("🎮 Creating Unlock Base UI...")
+    print("ðŸŽ® Creating Unlock Base UI...")
     
     -- Destroy old UI
     if unlockBaseUI then
@@ -1550,10 +1716,11 @@ function createUnlockBaseUI()
     end
 
     local gui = Instance.new("ScreenGui")
-    gui.Name = "UnlockBaseUI"
+    gui.Name = getRandomName()
     gui.ResetOnSpawn = false
     gui.DisplayOrder = 1001
-    gui.Parent = LocalPlayer.PlayerGui
+    gui.Parent = getUiParent()
+    unlockBaseUI = gui
 
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(0, 240, 0, 80)
@@ -1569,7 +1736,7 @@ function createUnlockBaseUI()
     stroke.Color = Theme.Accent2
     stroke.Thickness = 1.5
 
-    -- 🟩 DRAGGABLE HEADER
+    -- ðŸŸ© DRAGGABLE HEADER
     local header = Instance.new("Frame", frame)
     header.Size = UDim2.new(1, 0, 0, 30)
     header.BackgroundTransparency = 1
@@ -1614,7 +1781,7 @@ function createUnlockBaseUI()
     title.Size = UDim2.new(1, -10, 1, 0)
     title.Position = UDim2.new(0, 10, 0, 0)
     title.BackgroundTransparency = 1
-    title.Text = "🔓 UNLOCK BASE"
+    title.Text = "ðŸ”“ UNLOCK BASE"
     title.Font = Enum.Font.GothamBlack
     title.TextSize = 14
     title.TextColor3 = Theme.TextPrimary
@@ -1664,7 +1831,7 @@ function createUnlockBaseUI()
         end)
 
         btn.MouseButton1Click:Connect(function()
-            print("🔥 FLOOR", i, "CLICKED!")
+            print("ðŸ”¥ FLOOR", i, "CLICKED!")
             local f = floors[i]
             triggerClosestUnlock(f.yLevel, f.maxY)
 
@@ -1675,7 +1842,7 @@ function createUnlockBaseUI()
         end)
 
         btn.Activated:Connect(function()
-            print("🔥 FLOOR", i, "ACTIVATED!")
+            print("ðŸ”¥ FLOOR", i, "ACTIVATED!")
             local f = floors[i]
             triggerClosestUnlock(f.yLevel, f.maxY)
 
@@ -1687,13 +1854,13 @@ function createUnlockBaseUI()
     end
 
     unlockBaseUI = gui
-    print("✅ UNLOCK BASE UI CREATED! 🎉 Perfectly aligned 3 Floor buttons!")
+    print("âœ… UNLOCK BASE UI CREATED! ðŸŽ‰ Perfectly aligned 3 Floor buttons!")
     return gui
 end
 
--- 🔥 TOGGLE HANDLER
+-- ðŸ”¥ TOGGLE HANDLER
 ToggleHandlers.unlock_base_ui = function(state)
-    print("🔓 Unlock Base UI toggled:", state and "ON" or "OFF")
+    print("ðŸ”“ Unlock Base UI toggled:", state and "ON" or "OFF")
     
     if state then
         unlockBaseUI = createUnlockBaseUI()
@@ -1701,7 +1868,7 @@ ToggleHandlers.unlock_base_ui = function(state)
         if unlockBaseUI then
             unlockBaseUI:Destroy()
             unlockBaseUI = nil
-            print("🗑️ Unlock Base UI destroyed")
+            print("ðŸ—‘ï¸ Unlock Base UI destroyed")
         end
     end
 end
@@ -1712,14 +1879,14 @@ ToggleHandlers.player_esp_full = function(state)
     
     if state then
         startPlayerESP()
-        print("✅ Player ESP ENABLED")
+        print("âœ… Player ESP ENABLED")
     else
         stopPlayerESP()
-        print("❌ Player ESP DISABLED")
+        print("âŒ Player ESP DISABLED")
     end
 end
 
--- 🔥 FIXED TOGGLE HANDLER (SIMPLE & RELIABLE)
+-- ðŸ”¥ FIXED TOGGLE HANDLER (SIMPLE & RELIABLE)
 
 local Xray = {
     isOn = false,
@@ -2041,14 +2208,14 @@ local function refreshSubspaceMineESP()
     end
 end
 
--- 🔥 RUN LOOP (optimized)
+-- ðŸ”¥ RUN LOOP (optimized)
 RunService.Heartbeat:Connect(function()
     if Config.SubspaceMineESP then
         refreshSubspaceMineESP()
     end
 end)
 
--- 🔥 TOGGLE HANDLER (CONNECTS TO YOUR UI)
+-- ðŸ”¥ TOGGLE HANDLER (CONNECTS TO YOUR UI)
 ToggleHandlers.subspace_mine_esp = function(state)
     Config.SubspaceMineESP = state
 
@@ -2083,7 +2250,7 @@ local function createBaseESP(plot, mainPart)
     label.Size = UDim2.new(1, 0, 1, 0)
     label.BackgroundTransparency = 1
     label.TextScaled = false
-    label.TextSize = 17 -- you can tweak (10–14)
+    label.TextSize = 17 -- you can tweak (10â€“14)
     label.Font = Enum.Font.GothamBlack
     label.TextColor3 = Color3.fromRGB(255, 255, 255)
     label.TextStrokeTransparency = 0
@@ -2134,9 +2301,12 @@ local function updateBaseESP()
     end
 end
 
-RunService.Heartbeat:Connect(function()
-    if Config.BaseTimerESP then
-        updateBaseESP()
+task.spawn(function()
+    while _G.ZenoHubAlive do
+        if Config.BaseTimerESP then
+            pcall(updateBaseESP)
+        end
+        task.wait(0.3)
     end
 end)
 
@@ -2153,13 +2323,13 @@ local autoKickOnStealEnabled = false
 local autoKickOnStealConnections = {}
 local stealKeyword = "you stole"
 
--- 🔍 check keyword
+-- ðŸ” check keyword
 local function hasStealKeyword(text)
     if typeof(text) ~= "string" then return false end
     return string.find(string.lower(text), stealKeyword, 1, true) ~= nil
 end
 
--- 🧠 extract item name
+-- ðŸ§  extract item name
 local function extractStolenItem(fullText)
     if typeof(fullText) ~= "string" then
         return "Unknown"
@@ -2169,7 +2339,7 @@ local function extractStolenItem(fullText)
     local item = fullText:match("[Yy]ou stole%s*(.+)")
     if not item then return "Unknown" end
 
-    -- 🔥 REMOVE ALL RICHTEXT TAGS
+    -- ðŸ”¥ REMOVE ALL RICHTEXT TAGS
     item = item:gsub("<[^>]->", "")
 
     -- clean spaces
@@ -2178,20 +2348,20 @@ local function extractStolenItem(fullText)
     return item
 end
 
--- 🚪 kick player
+-- ðŸšª kick player
 local function kickForSteal(fullText)
     local item = extractStolenItem(fullText)
     local message = "Taxed By Shawn And Sheesh | You Stole " .. item
 
-    print("🔥 STEAL DETECTED:", fullText)
-    print("🔥 KICK MESSAGE:", message)
+    print("ðŸ”¥ STEAL DETECTED:", fullText)
+    print("ðŸ”¥ KICK MESSAGE:", message)
 
     pcall(function()
         Players.LocalPlayer:Kick(message)
     end)
 end
 
--- 👁 watch text objects safely
+-- ðŸ‘ watch text objects safely
 local function watchTextObject(obj)
     if not obj then return end
 
@@ -2221,7 +2391,7 @@ local function watchTextObject(obj)
     table.insert(autoKickOnStealConnections, conn)
 end
 
--- 🧹 cleanup
+-- ðŸ§¹ cleanup
 local function clearConnections()
     for _, conn in ipairs(autoKickOnStealConnections) do
         if conn then conn:Disconnect() end
@@ -2229,7 +2399,7 @@ local function clearConnections()
     table.clear(autoKickOnStealConnections)
 end
 
--- ▶ start system
+-- â–¶ start system
 local function startAutoKick()
     clearConnections()
 
@@ -2250,21 +2420,21 @@ local function startAutoKick()
     table.insert(autoKickOnStealConnections, conn)
 end
 
--- ⛔ stop system
+-- â›” stop system
 local function stopAutoKick()
     clearConnections()
 end
 
--- 🔥 TOGGLE HANDLER (PUT THIS INSIDE YOUR ToggleHandlers TABLE)
+-- ðŸ”¥ TOGGLE HANDLER (PUT THIS INSIDE YOUR ToggleHandlers TABLE)
 ToggleHandlers.auto_kick_steal = function(state)
     autoKickOnStealEnabled = state
 
     if state then
         startAutoKick()
-        print("✅ Auto Kick On Steal ENABLED")
+        print("âœ… Auto Kick On Steal ENABLED")
     else
         stopAutoKick()
-        print("❌ Auto Kick On Steal DISABLED")
+        print("âŒ Auto Kick On Steal DISABLED")
     end
 end
 
@@ -2310,11 +2480,15 @@ local function startSentryWatch()
 
         -- try to grab bat from workspace
         if not batTool then
-            for _, obj in ipairs(workspace:GetDescendants()) do
+            local descendants = workspace:GetDescendants()
+            for i, obj in ipairs(descendants) do
                 if obj:IsA("Tool") and obj.Name == "Bat" then
                     obj.Parent = backpack
                     batTool = obj
                     break
+                end
+                if i % 100 == 0 then
+                    task.wait(math.random(0.02, 0.05))
                 end
             end
         end
@@ -2346,7 +2520,7 @@ local function startSentryWatch()
             task.wait(0.12)
             if desc.Parent then
                 batTool:Activate()
-                hits += 1
+                hits = hits + 1
             end
         end
 
@@ -2369,10 +2543,10 @@ ToggleHandlers.anti_turret = function(state)
     sentryEnabled = state
     if state then
         startSentryWatch()
-        print("✅ Anti Turret Enabled")
+        print("âœ… Anti Turret Enabled")
     else
         stopSentryWatch()
-        print("❌ Anti Turret Disabled")
+        print("âŒ Anti Turret Disabled")
     end
 end
 end -- Anti-Turret scope
@@ -2429,16 +2603,16 @@ ToggleHandlers.infinite_jump = function(state)
     infiniteJumpEnabled = state
     if state then
         startInfiniteJump()
-        print("✅ Infinite Jump Enabled")
+        print("âœ… Infinite Jump Enabled")
     else
         stopInfiniteJump()
-        print("❌ Infinite Jump Disabled")
+        print("âŒ Infinite Jump Disabled")
     end
 end
 end -- Infinite Jump scope
 
 -- ================= ANTI RAGDOLL =================
--- 🔥 YOUR EXACT ANTI-RAGDOLL CODE
+-- ðŸ”¥ YOUR EXACT ANTI-RAGDOLL CODE
 antiRagdollConnection = nil
 antiRagdollEnabled = false
 
@@ -2503,13 +2677,13 @@ local function stopAntiRagdoll()
     end
 end
 
--- 🔥 AUTO-START FROM CONFIG (add this once)
+-- ðŸ”¥ AUTO-START FROM CONFIG (add this once)
 task.spawn(function()
     loadConfig()
     if Config.toggles["anti_ragdoll"] then
         antiRagdollEnabled = true  -- Your variable
         startAntiRagdoll()
-        print("🛡️ Anti-Ragdoll LOADED from config!")
+        print("ðŸ›¡ï¸ Anti-Ragdoll LOADED from config!")
     end
 end)
 
@@ -2523,7 +2697,7 @@ if antiRagdollConnection and antiRagdollConnection.Connected then
 hasLiveConnection = true
 end
             if not hasLiveConnection then
-                print("🔄 Anti-Ragdoll reconnecting...")
+                print("ðŸ”„ Anti-Ragdoll reconnecting...")
                 startAntiRagdoll()
             end
         end
@@ -2548,11 +2722,20 @@ local function equipCarpetFast()
 end
 
 local function balloonInstantLaunch()
-    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+    if not hrp or not humanoid then return end
 
     equipCarpetFast()
-    hrp.AssemblyLinearVelocity = Vector3.new(0, 6767676767, 0)
+    hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+    
+    local myPlot = findPlayerBase()
+    if myPlot and myPlot:FindFirstChild("Spawn") then
+        hrp.CFrame = myPlot.Spawn.CFrame + Vector3.new(0, 3, 0)
+    else
+        hrp.CFrame = hrp.CFrame + Vector3.new(0, 50, 0)
+    end
 end
 
 local function hasBalloonText(text)
@@ -2565,23 +2748,34 @@ local function checkBalloonText(text)
         if InstantResetEnabled then
             balloonInstantLaunch()
         else
-            local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
             if hrp then
                 equipCarpetFast()
-                hrp.AssemblyLinearVelocity = Vector3.new(0, 6767676767, 0)
+                hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                local myPlot = findPlayerBase()
+                if myPlot and myPlot:FindFirstChild("Spawn") then
+                    hrp.CFrame = myPlot.Spawn.CFrame + Vector3.new(0, 3, 0)
+                else
+                    hrp.CFrame = hrp.CFrame + Vector3.new(0, 50, 0)
+                end
             end
         end
     end
 end
 
 local function scanBalloonGuiObjects(parent)
-    for _, obj in ipairs(parent:GetDescendants()) do
+    local descendants = parent:GetDescendants()
+    for i, obj in ipairs(descendants) do
         if obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
             checkBalloonText(obj.Text)
             local conn = obj:GetPropertyChangedSignal("Text"):Connect(function()
                 checkBalloonText(obj.Text)
             end)
             table.insert(balloonGuiConnections, conn)
+        end
+        if i % 30 == 0 then
+            task.wait(math.random(0.05, 0.15))
         end
     end
 end
@@ -2641,10 +2835,10 @@ ToggleHandlers.auto_reset_balloon = function(state)
     AutoResetBalloonEnabled = state
     if state then
         startAutoResetBalloon()
-        print("✅ Auto Reset On Balloon Enabled")
+        print("âœ… Auto Reset On Balloon Enabled")
     else
         stopAutoResetBalloon()
-        print("❌ Auto Reset On Balloon Disabled")
+        print("âŒ Auto Reset On Balloon Disabled")
     end
 end
 ToggleHandlers.instant_reset = function(state)
@@ -2683,18 +2877,15 @@ local function carpetTpNextBase()
     local MyPlot = findPlayerBase()
     if not MyPlot then return end
 
-    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-    local hrp = char:WaitForChild("HumanoidRootPart")
-
     equipOnlyCarpet()
 
-    hrp.CFrame = MyPlot.Spawn.CFrame
+    teleportHRP(MyPlot.Spawn.CFrame)
     task.wait(0.1)
 
     if MyPlot:GetAttribute("Order") == 2 then
-        hrp.CFrame = CFrame.new(-348.617157, -6.603045, 113.494453)
+        teleportHRP(CFrame.new(-348.617157, -6.603045, 113.494453))
     elseif MyPlot:GetAttribute("Order") == 1 then
-        hrp.CFrame = CFrame.new(-350.810242, -6.537249, 6.641876)
+        teleportHRP(CFrame.new(-350.810242, -6.537249, 6.641876))
     end
 end
 
@@ -2823,8 +3014,33 @@ local function fireAllPanels()
             if main then
                 for _, obj in ipairs(main:GetDescendants()) do
                     if obj:IsA("ProximityPrompt") then
+                        -- Safe activation distance & positioning before fire
+                        local originalDist = obj.MaxActivationDistance
+                        local originalLOS = obj.RequiresLineOfSight
+                        local originalClickable = obj.ClickablePrompt
+                        
+                        obj.MaxActivationDistance = 9999
+                        obj.RequiresLineOfSight = false
+                        obj.ClickablePrompt = true
+                        
+                        local char = LocalPlayer.Character
+                        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                        local originalCFrame = hrp and hrp.CFrame
+                        
+                        if hrp and obj.Parent and obj.Parent:IsA("BasePart") then
+                            hrp.CFrame = CFrame.new(obj.Parent.Position)
+                        end
+                        
                         fireproximityprompt(obj)
-                        count += 1
+                        task.wait(math.random(0.05, 0.15)) -- Smooth out network calls!
+                        
+                        if hrp and originalCFrame then
+                            hrp.CFrame = originalCFrame
+                        end
+                        obj.MaxActivationDistance = originalDist
+                        obj.RequiresLineOfSight = originalLOS
+                        obj.ClickablePrompt = originalClickable
+                        count = count + 1
                     end
                 end
             end
@@ -2843,7 +3059,7 @@ end
 _G.ZenoHubAlive = true
 _G.ZenoHubConnections = {}
 
-print("🚀 Zeno Hub Starting...")
+print("ðŸš€ Zeno Hub Starting...")
 
 -- =============================================
 -- INTRUDER ALARM (NO BUTTON - HIDDEN)
@@ -2852,10 +3068,16 @@ print("🚀 Zeno Hub Starting...")
 local alarmEnabled = false
 local alarmConnection = nil
 
+if _G.IntruderAlarmInstance then
+    pcall(function() _G.IntruderAlarmInstance:Destroy() end)
+    _G.IntruderAlarmInstance = nil
+end
+
 local sg = Instance.new("ScreenGui")
-sg.Name = "IntruderAlarm"
+sg.Name = getRandomName()
 sg.ResetOnSpawn = false
-sg.Parent = LocalPlayer:WaitForChild("PlayerGui")
+sg.Parent = getUiParent()
+_G.IntruderAlarmInstance = sg
 
 local notifLbl = Instance.new("TextLabel")
 notifLbl.AnchorPoint = Vector2.new(0.5, 1)
@@ -2925,7 +3147,7 @@ local function startAlarm()
 
         if #intruders > 0 then
             local names = table.concat(intruders, ", ")
-            notifLbl.Text = "🚨 " .. #intruders .. " Player" .. (#intruders > 1 and "s" or "") .. " in your Base! 🚨\n" .. names
+            notifLbl.Text = "ðŸš¨ " .. #intruders .. " Player" .. (#intruders > 1 and "s" or "") .. " in your Base! ðŸš¨\n" .. names
             notifLbl.Visible = true
         else
             notifLbl.Visible = false
@@ -2972,7 +3194,7 @@ local function highlightClone(clone)
     if existingLabel then existingLabel:Destroy() end
     
     local player = getPlayerFromClone(clone)
-    local labelText = "⚠️ CLONE"
+    local labelText = "âš ï¸ CLONE"
     if player then labelText = player.Name .. " CLONE" end
     
     local highlight = Instance.new("Highlight")
@@ -3069,12 +3291,12 @@ cloneToggleBtn.MouseButton1Click:Connect(function()
         cloneToggleBtn.Text = ""
         cloneToggleBtn.TextColor3 = Color3.fromRGB(30, 200, 30)
         startCloneESP()
-        print("✅ CLONE ESP ENABLED")
+        print("âœ… CLONE ESP ENABLED")
     else
-        cloneToggleBtn.Text = "👤 CLONE ESP: OFF"
+        cloneToggleBtn.Text = "ðŸ‘¤ CLONE ESP: OFF"
         cloneToggleBtn.TextColor3 = Color3.fromRGB(180, 30, 30)
         stopCloneESP()
-        print("❌ CLONE ESP DISABLED")
+        print("âŒ CLONE ESP DISABLED")
     end
 end)
 
@@ -3107,10 +3329,10 @@ ToggleHandlers.player_esp = function(state)
 
     if state then
         startFriendsESP()
-        print("✅ Friends Allowed ESP ON")
+        print("âœ… Friends Allowed ESP ON")
     else
         stopFriendsESP()
-        print("❌ Friends Allowed ESP OFF")
+        print("âŒ Friends Allowed ESP OFF")
     end
 end
 
@@ -3118,10 +3340,10 @@ ToggleHandlers.clone_esp = function(state)
     cloneEspEnabled = state
     if state then
         startCloneESP()
-        print("✅ CLONE ESP ENABLED")
+        print("âœ… CLONE ESP ENABLED")
     else
         stopCloneESP()
-        print("❌ CLONE ESP DISABLED")
+        print("âŒ CLONE ESP DISABLED")
     end
 end
 
@@ -3129,10 +3351,10 @@ ToggleHandlers.intruder_alarm = function(state)
     alarmEnabled = state
     if state then
         startAlarm()
-        print("✅ INTRUDER ALARM ENABLED")
+        print("âœ… INTRUDER ALARM ENABLED")
     else
         stopAlarm()
-        print("❌ INTRUDER ALARM DISABLED")
+        print("âŒ INTRUDER ALARM DISABLED")
     end
 end
 
@@ -3161,9 +3383,9 @@ ToggleHandlers.auto_grabber = function(state)
                 task.wait(0.3)
             end
         end)
-        print("✅ Auto Grabber ENABLED")
+        print("âœ… Auto Grabber ENABLED")
     else
-        print("❌ Auto Grabber DISABLED")
+        print("âŒ Auto Grabber DISABLED")
     end
 end
     instaGrabEnabled = state
@@ -3178,8 +3400,10 @@ end
         end
         ISTConnections = {}
         pcall(function()
-            local gui = LocalPlayer.PlayerGui:FindFirstChild("InstantStealTP")
-            if gui then gui:Destroy() end
+            if _G.InstantStealTPInstance then
+                _G.InstantStealTPInstance:Destroy()
+                _G.InstantStealTPInstance = nil
+            end
         end)
     end
 end
@@ -3212,9 +3436,9 @@ ToggleHandlers.auto_giant_potion_speed = function(state)
     end
 end
 
--- 🔥 COMPLETE UNLOCK BASE HANDLER (Line ~1200)
+-- ðŸ”¥ COMPLETE UNLOCK BASE HANDLER (Line ~1200)
 ToggleHandlers.unlock_base_ui = function(state)
-    print("🔓 Unlock Base UI toggled:", state and "ON" or "OFF")
+    print("ðŸ”“ Unlock Base UI toggled:", state and "ON" or "OFF")
     
     if state then
         unlockBaseUI = createUnlockBaseUI()
@@ -3222,7 +3446,7 @@ ToggleHandlers.unlock_base_ui = function(state)
         if unlockBaseUI then
             unlockBaseUI:Destroy()
             unlockBaseUI = nil
-            print("🗑️ Unlock Base UI destroyed")
+            print("ðŸ—‘ï¸ Unlock Base UI destroyed")
         end
     end
 end
@@ -3346,21 +3570,21 @@ ToggleHandlers.grapple_speed = function(state)
     end
 end
 
--- 🔥 FIXED TOGGLE HANDLER (ONLY CHANGE THIS)
+-- ðŸ”¥ FIXED TOGGLE HANDLER (ONLY CHANGE THIS)
 ToggleHandlers.anti_ragdoll = function(state)
     antiRagdollEnabled = state      -- Your existing variable
-    Config.toggles["anti_ragdoll"] = state  -- 🔥 SAVE IT
-    saveConfig()                    -- 🔥 SAVE CONFIG
+    Config.toggles["anti_ragdoll"] = state  -- ðŸ”¥ SAVE IT
+    saveConfig()                    -- ðŸ”¥ SAVE CONFIG
     
     if state then
         startAntiRagdoll()
-        print("✅ Anti-Ragdoll ENABLED")
+        print("âœ… Anti-Ragdoll ENABLED")
     else
         stopAntiRagdoll()
-        print("❌ Anti-Ragdoll DISABLED")
+        print("âŒ Anti-Ragdoll DISABLED")
     end
 end
--- 🔥 ADD THIS IMMEDIATELY AFTER YOUR TOGGLE HANDLER
+-- ðŸ”¥ ADD THIS IMMEDIATELY AFTER YOUR TOGGLE HANDLER
 -- Auto-start from config + reconnect
 task.spawn(function()
     loadConfig() -- Load saved state
@@ -3369,7 +3593,7 @@ task.spawn(function()
     if Config.toggles["anti_ragdoll"] then
         AntiRagdollEnabled = true
         task.spawn(startAntiRagdoll)
-        print("🛡️ Anti-Ragdoll AUTO-STARTED!")
+        print("ðŸ›¡ï¸ Anti-Ragdoll AUTO-STARTED!")
         setToggleVisual("anti_ragdoll", true) -- Fix UI toggle
     end
     
@@ -3382,7 +3606,7 @@ if antiRagdollConnection and antiRagdollConnection.Connected then
 liveConns = 1
 end
             if liveConns == 0 then
-                print("🔄 Anti-Ragdoll reconnecting...")
+                print("ðŸ”„ Anti-Ragdoll reconnecting...")
                 task.spawn(startAntiRagdoll)
             end
         end
@@ -3408,35 +3632,35 @@ end)
 
 
 local COLORS = {
-    Background = Color3.fromRGB(10, 8, 14),
-    Panel = Color3.fromRGB(15, 12, 22),
-    Border = Color3.fromRGB(140, 80, 255),
-    Accent = Color3.fromRGB(170, 70, 255),
-    AccentBright = Color3.fromRGB(200, 120, 255),
-    TabActive = Color3.fromRGB(150, 60, 255),
-    TabInactive = Color3.fromRGB(28, 24, 38),
-    TabHover = Color3.fromRGB(50, 40, 70),
-    ToggleOn = Color3.fromRGB(160, 60, 255),
-    ToggleOff = Color3.fromRGB(35, 30, 48),
+    Background = Color3.fromRGB(12, 12, 16),
+    Panel = Color3.fromRGB(12, 12, 16),
+    Border = Color3.fromRGB(140, 82, 255),
+    Accent = Color3.fromRGB(140, 82, 255),
+    AccentBright = Color3.fromRGB(170, 70, 255),
+    TabActive = Color3.fromRGB(140, 82, 255),
+    TabInactive = Color3.fromRGB(20, 20, 28),
+    TabHover = Color3.fromRGB(35, 35, 48),
+    ToggleOn = Color3.fromRGB(140, 82, 255),
+    ToggleOff = Color3.fromRGB(30, 30, 40),
     KnobOn = Color3.fromRGB(255, 255, 255),
-    KnobOff = Color3.fromRGB(150, 140, 160),
-    Text = Color3.fromRGB(245, 240, 255),
-    TextDim = Color3.fromRGB(165, 155, 185),
-    SectionTitle = Color3.fromRGB(180, 150, 255),
-    SectionBG = Color3.fromRGB(18, 14, 26),
-    SectionBorder = Color3.fromRGB(80, 50, 140),
-    BindText = Color3.fromRGB(255, 120, 200),
-    BindBG = Color3.fromRGB(45, 25, 75),
-    MiniPanel = Color3.fromRGB(15, 12, 22),
-    MiniTitle = Color3.fromRGB(22, 16, 32),
-    MiniTitleBorder = Color3.fromRGB(100, 60, 180),
-    ButtonBG = Color3.fromRGB(35, 20, 60),
-    ButtonBorder = Color3.fromRGB(100, 60, 180),
-    ButtonHover = Color3.fromRGB(65, 18, 18),
-    ButtonText = Color3.fromRGB(240, 240, 240),
+    KnobOff = Color3.fromRGB(180, 180, 180),
+    Text = Color3.fromRGB(255, 255, 255),
+    TextDim = Color3.fromRGB(180, 180, 200),
+    SectionTitle = Color3.fromRGB(170, 70, 255),
+    SectionBG = Color3.fromRGB(18, 18, 24),
+    SectionBorder = Color3.fromRGB(100, 40, 180),
+    BindText = Color3.fromRGB(170, 70, 255),
+    BindBG = Color3.fromRGB(30, 30, 40),
+    MiniPanel = Color3.fromRGB(12, 12, 16),
+    MiniTitle = Color3.fromRGB(18, 18, 24),
+    MiniTitleBorder = Color3.fromRGB(100, 40, 180),
+    ButtonBG = Color3.fromRGB(30, 30, 40),
+    ButtonBorder = Color3.fromRGB(100, 40, 180),
+    ButtonHover = Color3.fromRGB(45, 45, 58),
+    ButtonText = Color3.fromRGB(255, 255, 255),
     Ready = Color3.fromRGB(80, 200, 80),
-    SliderTrack = Color3.fromRGB(40, 15, 15),
-    SliderFill = Color3.fromRGB(200, 30, 30),
+    SliderTrack = Color3.fromRGB(30, 30, 40),
+    SliderFill = Color3.fromRGB(140, 82, 255),
 }
 
 local TabData = {
@@ -3688,21 +3912,26 @@ end
 -- REMOVE OLD GUI & CREATE SCREEN GUI
 -- =============================================
 
-local oldGui = LocalPlayer.PlayerGui:FindFirstChild("Zeno Hub")
-if oldGui then oldGui:Destroy() end
+if _G.ZenoHubInstance then
+    pcall(function() _G.ZenoHubInstance:Destroy() end)
+    _G.ZenoHubInstance = nil
+end
 
 -- Cleanup old GUI on re-execute
 pcall(function()
-    local oldIST = LocalPlayer.PlayerGui:FindFirstChild("InstantStealTP")
-    if oldIST then oldIST:Destroy() end
+    if _G.InstantStealTPInstance then
+        pcall(function() _G.InstantStealTPInstance:Destroy() end)
+        _G.InstantStealTPInstance = nil
+    end
 end)
 
 local ScreenGui = createInstance("ScreenGui", {
-    Name = "Zeno Hub",
+    Name = getRandomName(),
     ResetOnSpawn = false,
     ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
     DisplayOrder = 999,
-}, LocalPlayer.PlayerGui)
+}, getUiParent())
+_G.ZenoHubInstance = ScreenGui
 
 local Stats = game:GetService("Stats")
 
@@ -3791,8 +4020,6 @@ function OpenInstantStealUI(anchorPanel)
     local UserInputService = game:GetService("UserInputService")
     local TweenService = game:GetService("TweenService")
 
-    local player = Players.LocalPlayer
-    local playerGui = LocalPlayer:WaitForChild("PlayerGui")
     local teleporting = false
     local teleportDebounce = false
 
@@ -3802,15 +4029,18 @@ function OpenInstantStealUI(anchorPanel)
 
     -- Destroy old one first
     pcall(function()
-        local existing = playerGui:FindFirstChild("InstantStealTP")
-        if existing then existing:Destroy() end
+        if _G.InstantStealTPInstance then
+            _G.InstantStealTPInstance:Destroy()
+            _G.InstantStealTPInstance = nil
+        end
     end)
 
     local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "InstantStealTP"
+    screenGui.Name = getRandomName()
     screenGui.ResetOnSpawn = false
     screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    screenGui.Parent = playerGui
+    screenGui.Parent = getUiParent()
+    _G.InstantStealTPInstance = screenGui
 
     -- Main Frame (compact for mobile)
     local main = Instance.new("Frame")
@@ -3826,7 +4056,8 @@ function OpenInstantStealUI(anchorPanel)
     end
 
     main.Position = _G.savedPos or pos
-    main.BackgroundColor3 = Color3.fromRGB(16, 8, 8)
+    main.BackgroundColor3 = Color3.fromRGB(12, 12, 16)
+    main.BackgroundTransparency = 0.15
     main.BorderSizePixel = 0
     main.ZIndex = 2
     main.Parent = screenGui
@@ -3859,8 +4090,9 @@ function OpenInstantStealUI(anchorPanel)
 
     -- Animated border stroke
     local mainStroke = Instance.new("UIStroke")
-    mainStroke.Color = Color3.fromRGB(140, 80, 255)
-    mainStroke.Thickness = 1.5
+    mainStroke.Color = Color3.fromRGB(140, 82, 255)
+    mainStroke.Thickness = 1
+    mainStroke.Transparency = 0.3
     mainStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     mainStroke.Parent = main
 
@@ -3888,9 +4120,9 @@ function OpenInstantStealUI(anchorPanel)
 
     local divGrad = Instance.new("UIGradient")
     divGrad.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0,   Color3.fromRGB(100, 10, 10)),
-        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(210, 30, 30)),
-        ColorSequenceKeypoint.new(1,   Color3.fromRGB(100, 10, 10)),
+        ColorSequenceKeypoint.new(0,   Color3.fromRGB(100, 40, 180)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(170, 70, 255)),
+        ColorSequenceKeypoint.new(1,   Color3.fromRGB(100, 40, 180)),
     })
     divGrad.Parent = divider
 
@@ -3951,15 +4183,22 @@ header = Instance.new("Frame")
     local closeBtn = Instance.new("TextButton")
     closeBtn.Size = UDim2.new(0, 18, 0, 18)
     closeBtn.Position = UDim2.new(1, -24, 0, 8)
-    closeBtn.BackgroundColor3 = Color3.fromRGB(210, 45, 45)
-    closeBtn.Text = "x"
+    closeBtn.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
+    closeBtn.Text = "×"
     closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    closeBtn.TextSize = 10
+    closeBtn.TextSize = 12
     closeBtn.Font = Enum.Font.GothamBold
     closeBtn.BorderSizePixel = 0
     closeBtn.ZIndex = 6
     closeBtn.Parent = header
     Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 5)
+
+    closeBtn.MouseEnter:Connect(function()
+        TweenService:Create(closeBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(210, 50, 50)}):Play()
+    end)
+    closeBtn.MouseLeave:Connect(function()
+        TweenService:Create(closeBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(180, 40, 40)}):Play()
+    end)
     closeBtn.MouseButton1Click:Connect(function()
         if dragConn then dragConn:Disconnect() end
         screenGui:Destroy()
@@ -3974,15 +4213,27 @@ header = Instance.new("Frame")
     local minimizeBtn = Instance.new("TextButton")
     minimizeBtn.Size = UDim2.new(0, 18, 0, 18)
     minimizeBtn.Position = UDim2.new(1, -46, 0, 8)
-    minimizeBtn.BackgroundColor3 = Color3.fromRGB(120, 120, 120)
+    minimizeBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
     minimizeBtn.Text = "-"
     minimizeBtn.TextColor3 = Color3.fromRGB(255,255,255)
-    minimizeBtn.TextSize = 14
+    minimizeBtn.TextSize = 12
     minimizeBtn.Font = Enum.Font.GothamBold
     minimizeBtn.BorderSizePixel = 0
     minimizeBtn.ZIndex = 6
     minimizeBtn.Parent = header
     Instance.new("UICorner", minimizeBtn).CornerRadius = UDim.new(0, 5)
+
+    local minStroke = Instance.new("UIStroke", minimizeBtn)
+    minStroke.Color = Color3.fromRGB(140, 82, 255)
+    minStroke.Thickness = 1
+    minStroke.Transparency = 0.6
+
+    minimizeBtn.MouseEnter:Connect(function()
+        TweenService:Create(minimizeBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(45, 45, 58)}):Play()
+    end)
+    minimizeBtn.MouseLeave:Connect(function()
+        TweenService:Create(minimizeBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(30, 30, 40)}):Play()
+    end)
 
     minimizeBtn.MouseButton1Click:Connect(function()
         minimized = not minimized
@@ -4015,23 +4266,31 @@ header = Instance.new("Frame")
     local keybindBtn = Instance.new("TextButton")
     keybindBtn.Size = UDim2.new(1, -16, 0, 20)
     keybindBtn.Position = UDim2.new(0, 8, 0, 12)
-    keybindBtn.BackgroundColor3 = Color3.fromRGB(28, 10, 10)
+    keybindBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 28)
     keybindBtn.Text = "[ F ]"
     if Config.sliders and Config.sliders.ist_keybind then
         keybindBtn.Text = "[ " .. Config.sliders.ist_keybind .. " ]"
     end
-    keybindBtn.TextColor3 = Color3.fromRGB(215, 215, 230)
+    keybindBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     keybindBtn.TextSize = 11
     keybindBtn.Font = Enum.Font.GothamBold
     keybindBtn.BorderSizePixel = 0
     keybindBtn.ZIndex = 4
     keybindBtn.Parent = content
-    Instance.new("UICorner", keybindBtn).CornerRadius = UDim.new(0, 7)
+    Instance.new("UICorner", keybindBtn).CornerRadius = UDim.new(0, 6)
 
     local kbStroke = Instance.new("UIStroke")
-    kbStroke.Color = Color3.fromRGB(80, 50, 140)
-    kbStroke.Thickness = 1.2
+    kbStroke.Color = Color3.fromRGB(140, 82, 255)
+    kbStroke.Thickness = 1
+    kbStroke.Transparency = 0.5
     kbStroke.Parent = keybindBtn
+
+    keybindBtn.MouseEnter:Connect(function()
+        TweenService:Create(keybindBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(30, 30, 42)}):Play()
+    end)
+    keybindBtn.MouseLeave:Connect(function()
+        TweenService:Create(keybindBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(20, 20, 28)}):Play()
+    end)
 
     -- Keybind bind logic
     keybindBtn.MouseButton1Click:Connect(function()
@@ -4070,7 +4329,7 @@ header = Instance.new("Frame")
     local teleportBtn = Instance.new("TextButton")
     teleportBtn.Size = UDim2.new(1, -16, 0, 22)
     teleportBtn.Position = UDim2.new(0, 8, 0, 36)
-    teleportBtn.BackgroundColor3 = Color3.fromRGB(145, 0, 0)
+    teleportBtn.BackgroundColor3 = Color3.fromRGB(140, 82, 255)
     teleportBtn.Text = "Teleport"
     teleportBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     teleportBtn.TextSize = 11
@@ -4078,12 +4337,24 @@ header = Instance.new("Frame")
     teleportBtn.BorderSizePixel = 0
     teleportBtn.ZIndex = 4
     teleportBtn.Parent = content
-    Instance.new("UICorner", teleportBtn).CornerRadius = UDim.new(0, 8)
+    Instance.new("UICorner", teleportBtn).CornerRadius = UDim.new(0, 6)
+
+    local telStroke = Instance.new("UIStroke", teleportBtn)
+    telStroke.Color = Color3.fromRGB(170, 70, 255)
+    telStroke.Thickness = 1
+    telStroke.Transparency = 0.5
+
+    teleportBtn.MouseEnter:Connect(function()
+        TweenService:Create(teleportBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(160, 100, 255)}):Play()
+    end)
+    teleportBtn.MouseLeave:Connect(function()
+        TweenService:Create(teleportBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(140, 82, 255)}):Play()
+    end)
 
     local activateBtn = Instance.new("TextButton")
     activateBtn.Size = UDim2.new(1, -16, 0, 22)
     activateBtn.Position = UDim2.new(0, 8, 0, 61)
-    activateBtn.BackgroundColor3 = Color3.fromRGB(145, 0, 0)
+    activateBtn.BackgroundColor3 = Color3.fromRGB(140, 82, 255)
     activateBtn.Text = "Activate"
     activateBtn.TextColor3 = Color3.fromRGB(255,255,255)
     activateBtn.TextSize = 11
@@ -4091,7 +4362,19 @@ header = Instance.new("Frame")
     activateBtn.BorderSizePixel = 0
     activateBtn.ZIndex = 4
     activateBtn.Parent = content
-    Instance.new("UICorner", activateBtn).CornerRadius = UDim.new(0, 8)
+    Instance.new("UICorner", activateBtn).CornerRadius = UDim.new(0, 6)
+
+    local actStroke = Instance.new("UIStroke", activateBtn)
+    actStroke.Color = Color3.fromRGB(170, 70, 255)
+    actStroke.Thickness = 1
+    actStroke.Transparency = 0.5
+
+    activateBtn.MouseEnter:Connect(function()
+        TweenService:Create(activateBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(160, 100, 255)}):Play()
+    end)
+    activateBtn.MouseLeave:Connect(function()
+        TweenService:Create(activateBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(140, 82, 255)}):Play()
+    end)
 
     activateBtn.MouseButton1Click:Connect(function()
         local char = LocalPlayer.Character
@@ -4106,15 +4389,16 @@ header = Instance.new("Frame")
         local row = Instance.new("Frame")
         row.Size = UDim2.new(1, -16, 0, 28)
         row.Position = UDim2.new(0, 8, 0, yPos)
-        row.BackgroundColor3 = Color3.fromRGB(28, 10, 10)
+        row.BackgroundColor3 = Color3.fromRGB(20, 20, 28)
         row.BorderSizePixel = 0
         row.ZIndex = 4
         row.Parent = parent
-        Instance.new("UICorner", row).CornerRadius = UDim.new(0, 7)
+        Instance.new("UICorner", row).CornerRadius = UDim.new(0, 6)
 
         local rowStroke = Instance.new("UIStroke")
-        rowStroke.Color = Color3.fromRGB(80, 50, 140)
-        rowStroke.Thickness = 1.2
+        rowStroke.Color = Color3.fromRGB(140, 82, 255)
+        rowStroke.Thickness = 1
+        rowStroke.Transparency = 0.5
         rowStroke.Parent = row
 
         local lbl = Instance.new("TextLabel")
@@ -4122,9 +4406,9 @@ header = Instance.new("Frame")
         lbl.Position = UDim2.new(0, 8, 0, 0)
         lbl.BackgroundTransparency = 1
         lbl.Text = labelText
-        lbl.TextColor3 = Color3.fromRGB(215, 215, 230)
+        lbl.TextColor3 = Color3.fromRGB(255, 255, 255)
         lbl.TextSize = 11
-        lbl.Font = Enum.Font.GothamBold
+        lbl.Font = Enum.Font.GothamMedium
         lbl.TextXAlignment = Enum.TextXAlignment.Left
         lbl.ZIndex = 5
         lbl.Parent = row
@@ -4184,10 +4468,10 @@ header = Instance.new("Frame")
         end)
 
         clickBtn.MouseEnter:Connect(function()
-            TweenService:Create(row, TweenInfo.new(0.12), {BackgroundColor3 = Color3.fromRGB(38, 14, 14)}):Play()
+            TweenService:Create(row, TweenInfo.new(0.12), {BackgroundColor3 = Color3.fromRGB(30, 30, 40)}):Play()
         end)
         clickBtn.MouseLeave:Connect(function()
-            TweenService:Create(row, TweenInfo.new(0.12), {BackgroundColor3 = Color3.fromRGB(28, 10, 10)}):Play()
+            TweenService:Create(row, TweenInfo.new(0.12), {BackgroundColor3 = Color3.fromRGB(20, 20, 28)}):Play()
         end)
 
         return function() return state end
@@ -4204,9 +4488,9 @@ header = Instance.new("Frame")
 
     local div2Grad = Instance.new("UIGradient")
     div2Grad.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0,   Color3.fromRGB(60, 8, 8)),
-        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(160, 22, 22)),
-        ColorSequenceKeypoint.new(1,   Color3.fromRGB(60, 8, 8)),
+        ColorSequenceKeypoint.new(0,   Color3.fromRGB(100, 40, 180)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(170, 70, 255)),
+        ColorSequenceKeypoint.new(1,   Color3.fromRGB(100, 40, 180)),
     })
     div2Grad.Parent = divider2
 
@@ -4216,9 +4500,9 @@ header = Instance.new("Frame")
     optLabel.Position = UDim2.new(0, 8, 0, 90)
     optLabel.BackgroundTransparency = 1
     optLabel.Text = "Options"
-    optLabel.TextColor3 = Color3.fromRGB(140, 80, 80)
+    optLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
     optLabel.TextSize = 10
-    optLabel.Font = Enum.Font.Gotham
+    optLabel.Font = Enum.Font.GothamBold
     optLabel.TextXAlignment = Enum.TextXAlignment.Left
     optLabel.ZIndex = 3
     optLabel.Parent = content
@@ -4238,23 +4522,23 @@ header = Instance.new("Frame")
     sliderLabel.Size = UDim2.new(1, 0, 0, 12)
     sliderLabel.BackgroundTransparency = 1
     sliderLabel.Text = "Speed: 28"
-    sliderLabel.TextColor3 = Color3.fromRGB(200,200,200)
+    sliderLabel.TextColor3 = Color3.fromRGB(255,255,255)
     sliderLabel.TextSize = 11
-    sliderLabel.Font = Enum.Font.Gotham
+    sliderLabel.Font = Enum.Font.GothamMedium
     sliderLabel.TextXAlignment = Enum.TextXAlignment.Left
     sliderLabel.Parent = sliderFrame
 
     local sliderBar = Instance.new("Frame")
     sliderBar.Size = UDim2.new(1, 0, 0, 6)
     sliderBar.Position = UDim2.new(0, 0, 0, 18)
-    sliderBar.BackgroundColor3 = Color3.fromRGB(50, 18, 18)
+    sliderBar.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
     sliderBar.BorderSizePixel = 0
     sliderBar.Parent = sliderFrame
     Instance.new("UICorner", sliderBar).CornerRadius = UDim.new(1,0)
 
     local sliderFill = Instance.new("Frame")
     sliderFill.Size = UDim2.new(0.2, 0, 1, 0)
-    sliderFill.BackgroundColor3 = Color3.fromRGB(180, 20, 20)
+    sliderFill.BackgroundColor3 = Color3.fromRGB(140, 82, 255)
     sliderFill.BorderSizePixel = 0
     sliderFill.Parent = sliderBar
     Instance.new("UICorner", sliderFill).CornerRadius = UDim.new(1,0)
@@ -4377,11 +4661,7 @@ header = Instance.new("Frame")
 local _debounce = false
 
     local function teleportHRP(position)
-        local character = player.Character or player.CharacterAdded:Wait()
-        local hrp = character:FindFirstChild("HumanoidRootPart")
-        if not hrp then return end
-        hrp.AssemblyLinearVelocity = Vector3.zero
-        hrp.CFrame = CFrame.new(position)
+        teleportHRP(position)
     end
 
     local function runStealLogic()
@@ -4427,11 +4707,25 @@ local _debounce = false
 
         local function w(x)
             if not x or not x:IsDescendantOf(workspace) then return end
-            x.MaxActivationDistance=9e9
-            x.RequiresLineOfSight=false
-            x.ClickablePrompt=true
-            local y=pcall(function()
-                fireproximityprompt(x,9e9,b)
+            local originalDist = x.MaxActivationDistance
+            local originalLOS = x.RequiresLineOfSight
+            local originalClickable = x.ClickablePrompt
+            
+            x.MaxActivationDistance = 9999
+            x.RequiresLineOfSight = false
+            x.ClickablePrompt = true
+            
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            local originalCFrame = hrp and hrp.CFrame
+            local promptPart = x.Parent
+            
+            if hrp and promptPart and promptPart:IsA("BasePart") then
+                hrp.CFrame = CFrame.new(promptPart.Position)
+            end
+            
+            local y = pcall(function()
+                fireproximityprompt(x)
             end)
             if not y then
                 pcall(function()
@@ -4440,6 +4734,13 @@ local _debounce = false
                     x:InputHoldEnd()
                 end)
             end
+            
+            if hrp and originalCFrame then
+                hrp.CFrame = originalCFrame
+            end
+            x.MaxActivationDistance = originalDist
+            x.RequiresLineOfSight = originalLOS
+            x.ClickablePrompt = originalClickable
         end
 
         local z=p()
@@ -4862,8 +5163,8 @@ creditsFrame.Size = UDim2.new(0, 340, 0, 110)
 creditsFrame.Position = UDim2.new(0.5, 0, 0, isMobile and 5 or 50)
 creditsFrame.Size = UDim2.new(0, isMobile and 280 or 340, 0, isMobile and 80 or 110)
 creditsFrame.AnchorPoint = Vector2.new(0.5, 0)
-creditsFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-creditsFrame.BackgroundTransparency = 0.3
+creditsFrame.BackgroundColor3 = Color3.fromRGB(12, 12, 16)
+creditsFrame.BackgroundTransparency = 0.15
 creditsFrame.BorderSizePixel = 0
 creditsFrame.Parent = ScreenGui
 
@@ -4875,23 +5176,24 @@ layout.Padding = UDim.new(0, 2)
 layout.Parent = creditsFrame
 
 local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 12)
+corner.CornerRadius = UDim.new(0, 8)
 corner.Parent = creditsFrame
 
 local stroke = Instance.new("UIStroke")
-stroke.Color = Color3.fromRGB(140, 80, 255)
-stroke.Thickness = 1.5
+stroke.Color = Color3.fromRGB(140, 82, 255)
+stroke.Thickness = 1
+stroke.Transparency = 0.3
 stroke.Parent = creditsFrame
 
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 28)
 title.Position = UDim2.new(0, 0, 0, 4)
 title.BackgroundTransparency = 1
-title.Text = "Dex Hub V1.2"
-title.Font = Enum.Font.GothamBlack
-title.TextSize = isMobile and 13 or 18
+title.Text = "DEX HUB V1.2"
+title.Font = Enum.Font.GothamBold
+title.TextSize = isMobile and 13 or 16
 title.TextColor3 = Color3.fromRGB(255, 255, 255)
-title.TextStrokeTransparency = 0
+title.TextStrokeTransparency = 1
 title.TextXAlignment = Enum.TextXAlignment.Center
 title.Parent = creditsFrame
 
@@ -4900,10 +5202,10 @@ credits.Size = UDim2.new(1, 0, 0, 18)
 credits.Position = UDim2.new(0, 0, 0, 30)
 credits.BackgroundTransparency = 1
 credits.Text = "Brainrot10071985 | mohamed79109 | randomguy12v"
-credits.Font = Enum.Font.GothamBlack
-credits.TextSize = isMobile and 9 or 13
-credits.TextColor3 = Color3.fromRGB(180, 180, 180)
-credits.TextStrokeTransparency = 0.5
+credits.Font = Enum.Font.GothamMedium
+credits.TextSize = isMobile and 9 or 12
+credits.TextColor3 = Color3.fromRGB(180, 180, 200)
+credits.TextStrokeTransparency = 1
 credits.TextXAlignment = Enum.TextXAlignment.Center
 credits.Parent = creditsFrame
 
@@ -4912,10 +5214,10 @@ subtitle.Size = UDim2.new(1, 0, 0, 18)
 subtitle.Position = UDim2.new(0, 0, 0, 48)
 subtitle.BackgroundTransparency = 1
 subtitle.Text = "dsc.gg/x8AYUCUu"
-subtitle.Font = Enum.Font.GothamBlack
-subtitle.TextSize = 14
-subtitle.TextColor3 = Color3.fromRGB(200, 200, 200)
-subtitle.TextStrokeTransparency = 0.5
+subtitle.Font = Enum.Font.GothamMedium
+subtitle.TextSize = 13
+subtitle.TextColor3 = Color3.fromRGB(140, 82, 255)
+subtitle.TextStrokeTransparency = 1
 subtitle.TextXAlignment = Enum.TextXAlignment.Center
 subtitle.Parent = creditsFrame
 
@@ -4936,7 +5238,7 @@ local frames = 0
 local currentFPS = 0
 
 RunService.RenderStepped:Connect(function()
-    frames += 1
+    frames = frames + 1
     if tick() - lastTime >= 1 then
         currentFPS = frames
         frames = 0
@@ -5156,7 +5458,7 @@ local function createMiniPanel(name, position, size)
         Size = UDim2.new(0, 22, 0, 22),
         Position = UDim2.new(1, -30, 0.5, -11),
         BackgroundTransparency = 1,
-        Text = "—",
+        Text = "â€”",
         Font = Enum.Font.GothamBold,
         TextColor3 = COLORS.AccentBright,
         TextSize = 14,
@@ -5255,56 +5557,83 @@ end
 local function createMiniToggle(parent, label, order, onToggle, bindId)
     local row = createInstance("Frame", {
         Name = "Row_" .. label,
-        Size = UDim2.new(1, 0, 0, 30),
+        Size = UDim2.new(1, 0, 0, 32),
         BackgroundColor3 = COLORS.SectionBG,
-        BackgroundTransparency = 0.3,
+        BackgroundTransparency = 0.4,
         BorderSizePixel = 0,
         LayoutOrder = order or 0,
     }, parent)
     addCorner(row, 6)
+    
+    local rowStroke = createInstance("UIStroke", {
+        Color = COLORS.Border,
+        Thickness = 1,
+        Transparency = 0.85,
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    }, row)
 
     local lbl = createInstance("TextButton", {
         Size = UDim2.new(1, -50, 1, 0),
-        Position = UDim2.new(0, 8, 0, 0),
+        Position = UDim2.new(0, 10, 0, 0),
         BackgroundTransparency = 1,
         Text = label,
         Font = Enum.Font.GothamMedium,
         TextColor3 = COLORS.Text,
-        TextSize = 12,
+        TextSize = 11,
         TextXAlignment = Enum.TextXAlignment.Left,
         AutoButtonColor = false,
     }, row)
 
     local switch = createInstance("Frame", {
         Name = "Switch",
-        Size = UDim2.new(0, 36, 0, 18),
-        Position = UDim2.new(1, -44, 0.5, -9),
+        Size = UDim2.new(0, 32, 0, 16),
+        Position = UDim2.new(1, -42, 0.5, -8),
         BackgroundColor3 = COLORS.ToggleOff,
         BorderSizePixel = 0,
     }, row)
-    addCorner(switch, 9)
-    addStroke(switch, Color3.fromRGB(80, 50, 140), 1)
+    addCorner(switch, 8)
+    
+    local switchStroke = createInstance("UIStroke", {
+        Color = COLORS.Border,
+        Thickness = 1,
+        Transparency = 0.5,
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    }, switch)
 
     local knob = createInstance("Frame", {
         Name = "Knob",
-        Size = UDim2.new(0, 14, 0, 14),
-        Position = UDim2.new(0, 2, 0.5, -7),
+        Size = UDim2.new(0, 10, 0, 10),
+        Position = UDim2.new(0, 3, 0.5, -5),
         BackgroundColor3 = COLORS.KnobOff,
         BorderSizePixel = 0,
     }, switch)
-    addCorner(knob, 7)
+    addCorner(knob, 5)
 
     local isOn = Config.toggles[label] or false
 
-    if isOn then
-        switch.BackgroundColor3 = COLORS.ToggleOn
-        knob.Position = UDim2.new(1, -16, 0.5, -7)
-        knob.BackgroundColor3 = COLORS.KnobOn
-    else
-        switch.BackgroundColor3 = COLORS.ToggleOff
-        knob.Position = UDim2.new(0, 2, 0.5, -7)
-        knob.BackgroundColor3 = COLORS.KnobOff
+    local function applyState(state, animate)
+        local targetColor = state and COLORS.ToggleOn or COLORS.ToggleOff
+        local targetKnobX = state and UDim2.new(0, 19, 0.5, -5) or UDim2.new(0, 3, 0.5, -5)
+        local targetKnobColor = state and COLORS.KnobOn or COLORS.KnobOff
+        
+        if animate then
+            TweenService:Create(switch, TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {BackgroundColor3 = targetColor}):Play()
+            TweenService:Create(knob, TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Position = targetKnobX, BackgroundColor3 = targetKnobColor}):Play()
+        else
+            switch.BackgroundColor3 = targetColor
+            knob.Position = targetKnobX
+            knob.BackgroundColor3 = targetKnobColor
+        end
     end
+
+    applyState(isOn, false)
+
+    lbl.MouseEnter:Connect(function()
+        tween(row, { BackgroundColor3 = Color3.fromRGB(24, 24, 32), BackgroundTransparency = 0.2 }, 0.15)
+    end)
+    lbl.MouseLeave:Connect(function()
+        tween(row, { BackgroundColor3 = COLORS.SectionBG, BackgroundTransparency = 0.4 }, 0.15)
+    end)
 
     -- Auto-restore: fire callback if saved state was ON
     if isOn and onToggle then
@@ -5399,7 +5728,7 @@ end
 local function createMiniButton(parent, label, order, bindId)
     local btn = createInstance("TextButton", {
         Name = "Btn_" .. label,
-        Size = UDim2.new(1, 0, 0, 30),
+        Size = UDim2.new(1, 0, 0, 32),
         BackgroundColor3 = COLORS.ButtonBG,
         BorderSizePixel = 0,
         Text = label,
@@ -5410,13 +5739,21 @@ local function createMiniButton(parent, label, order, bindId)
         LayoutOrder = order or 0,
     }, parent)
     addCorner(btn, 6)
-    addStroke(btn, COLORS.ButtonBorder, 1)
+    
+    local btnStroke = createInstance("UIStroke", {
+        Color = COLORS.Border,
+        Thickness = 1,
+        Transparency = 0.6,
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    }, btn)
 
     btn.MouseEnter:Connect(function()
         tween(btn, { BackgroundColor3 = COLORS.ButtonHover }, 0.15)
+        tween(btnStroke, { Color = COLORS.AccentBright }, 0.15)
     end)
     btn.MouseLeave:Connect(function()
         tween(btn, { BackgroundColor3 = COLORS.ButtonBG }, 0.15)
+        tween(btnStroke, { Color = COLORS.Border }, 0.15)
     end)
     btn.MouseButton1Click:Connect(function()
         tween(btn, { BackgroundColor3 = COLORS.Accent }, 0.08)
@@ -5471,7 +5808,7 @@ local setValue = nil
 local currentValue = nil
     local container = createInstance("Frame", {
         Name = "Slider_" .. label,
-        Size = UDim2.new(1, 0, 0, 38),
+        Size = UDim2.new(1, 0, 0, 40),
         BackgroundTransparency = 1,
         LayoutOrder = order or 0,
     }, parent)
@@ -5489,18 +5826,24 @@ local currentValue = nil
 
     local valueBox = createInstance("TextBox", {
         Name = "Value",
-        Size = UDim2.new(0.4, 0, 0, 16),
-        Position = UDim2.new(0.6, 0, 0, 0),
-        BackgroundColor3 = Color3.fromRGB(40, 12, 12),
+        Size = UDim2.new(0.3, 0, 0, 16),
+        Position = UDim2.new(0.7, 0, 0, 0),
+        BackgroundColor3 = Color3.fromRGB(30, 30, 40),
         BackgroundTransparency = 0.3,
         Text = tostring(Config.sliders[label] or default),
         Font = Enum.Font.GothamBold,
         TextColor3 = COLORS.AccentBright,
-        TextSize = 11,
+        TextSize = 10,
         TextXAlignment = Enum.TextXAlignment.Center,
         ClearTextOnFocus = true,
     }, container)
     addCorner(valueBox, 4)
+    local valBoxStroke = createInstance("UIStroke", {
+        Color = COLORS.Border,
+        Thickness = 1,
+        Transparency = 0.6,
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    }, valueBox)
     local valueLabel = valueBox
 
     valueBox.FocusLost:Connect(function(enterPressed)
@@ -5519,12 +5862,12 @@ currentValue = Config.sliders[label] or default
 
     local track = createInstance("Frame", {
         Name = "Track",
-        Size = UDim2.new(1, -8, 0, 8),
-        Position = UDim2.new(0, 4, 0, 22),
+        Size = UDim2.new(1, -8, 0, 6),
+        Position = UDim2.new(0, 4, 0, 24),
         BackgroundColor3 = COLORS.SliderTrack,
         BorderSizePixel = 0,
     }, container)
-    addCorner(track, 4)
+    addCorner(track, 3)
 
     local pct = (currentValue - min) / (max - min)
     local fill = createInstance("Frame", {
@@ -5533,17 +5876,17 @@ currentValue = Config.sliders[label] or default
         BackgroundColor3 = COLORS.SliderFill,
         BorderSizePixel = 0,
     }, track)
-    addCorner(fill, 4)
+    addCorner(fill, 3)
 
     local sliderKnob = createInstance("Frame", {
         Name = "SliderKnob",
-        Size = UDim2.new(0, 14, 0, 14),
-        Position = UDim2.new(pct, -7, 0.5, -7),
+        Size = UDim2.new(0, 12, 0, 12),
+        Position = UDim2.new(pct, -6, 0.5, -6),
         BackgroundColor3 = Color3.fromRGB(255, 255, 255),
         BorderSizePixel = 0,
         ZIndex = 3,
     }, track)
-    addCorner(sliderKnob, 7)
+    addCorner(sliderKnob, 6)
     addStroke(sliderKnob, COLORS.AccentBright, 1.5)
 
     setValue = function(v)
@@ -5616,7 +5959,7 @@ currentValue = Config.sliders[label] or default
             fill.Size = UDim2.new(rel, 0, 1, 0)
             sliderKnob.Position = UDim2.new(rel, -7, 0.5, -7)
         end
-    end)  -- ← This was missing!
+    end)  -- â† This was missing!
 
     -- Initialize with saved/default value
     setValue(currentValue)
@@ -5630,7 +5973,7 @@ currentValue = Config.sliders[label] or default
         Get = function() return currentValue end,
         Set = setValue
     }
-end  -- ← Keep this one only
+end  -- â† Keep this one only
 
 local function createCommandRow(parent, cmdName, order)
     local row = createInstance("Frame", {
@@ -5724,7 +6067,7 @@ do
     toggleBtn.MouseButton1Click:Connect(function()
         allowFriendsEnabled = not allowFriendsEnabled
 
-        -- 🔥 call the system
+        -- ðŸ”¥ call the system
         toggleAllowFriendsAll()
     end)
 
@@ -5738,7 +6081,7 @@ end)
 MiniPanels["intruder_alarm"] = intruderAlarmPanel
 
 -- =============================================
--- INVISIBLE STEAL — Core Logic
+-- INVISIBLE STEAL â€” Core Logic
 -- =============================================
 
 local invisAnimPlaying = false
@@ -5766,25 +6109,39 @@ local function invisCreateErrorOrb()
     invisErrorOrbActive = true
     for _, ghost in pairs(invisServerGhosts) do if ghost and ghost.Parent then ghost:Destroy() end end
     invisServerGhosts = {}
+    if _G.ErrorOrbGuiInstance then
+        pcall(function() _G.ErrorOrbGuiInstance:Destroy() end)
+        _G.ErrorOrbGuiInstance = nil
+    end
     local sg = Instance.new("ScreenGui")
-    sg.Name = "ErrorOrbGui"; sg.ResetOnSpawn = false
-    sg.Parent = LocalPlayer:WaitForChild("PlayerGui")
+    sg.Name = getRandomName(); sg.ResetOnSpawn = false
+    sg.Parent = getUiParent()
+    _G.ErrorOrbGuiInstance = sg
     local fr = Instance.new("Frame")
-    fr.Size = UDim2.new(0, 500, 0, 60)
+    fr.Size = UDim2.new(0, 500, 0, 80)
     fr.Position = UDim2.new(0.5, -250, 0.3, 0)
-    fr.BackgroundTransparency = 1; fr.BorderSizePixel = 0; fr.Parent = sg
+    fr.BackgroundColor3 = Color3.fromRGB(12, 12, 16)
+    fr.BackgroundTransparency = 0.15
+    fr.BorderSizePixel = 0
+    fr.Parent = sg
+    Instance.new("UICorner", fr).CornerRadius = UDim.new(0, 8)
+    local stroke = Instance.new("UIStroke", fr)
+    stroke.Color = Color3.fromRGB(255, 70, 70)
+    stroke.Thickness = 1
+    stroke.Transparency = 0.3
+
     local l1 = Instance.new("TextLabel")
     l1.Size = UDim2.new(1, 0, 0.5, 0); l1.BackgroundTransparency = 1
     l1.Text = "ERROR CAUSED BY PLAYER DEATH"
-    l1.TextColor3 = Color3.fromRGB(255, 0, 0)
-    l1.TextStrokeTransparency = 0; l1.TextStrokeColor3 = Color3.new(0, 0, 0)
-    l1.Font = Enum.Font.SourceSansBold; l1.TextScaled = true; l1.Parent = fr
+    l1.TextColor3 = Color3.fromRGB(255, 70, 70)
+    l1.TextStrokeTransparency = 1
+    l1.Font = Enum.Font.GothamBold; l1.TextSize = 16; l1.Parent = fr
     local l2 = Instance.new("TextLabel")
     l2.Size = UDim2.new(1, 0, 0.5, 0); l2.Position = UDim2.new(0, 0, 0.5, 0)
     l2.BackgroundTransparency = 1; l2.Text = "MUST RESET TO FIX ERROR"
-    l2.TextColor3 = Color3.fromRGB(255, 0, 0)
-    l2.TextStrokeTransparency = 0; l2.TextStrokeColor3 = Color3.new(0, 0, 0)
-    l2.Font = Enum.Font.SourceSansBold; l2.TextScaled = true; l2.Parent = fr
+    l2.TextColor3 = Color3.fromRGB(255, 70, 70)
+    l2.TextStrokeTransparency = 1
+    l2.Font = Enum.Font.GothamBold; l2.TextSize = 14; l2.Parent = fr
     invisErrorOrb = sg
 end
 
@@ -5798,22 +6155,27 @@ local function invisCreateServerGhost(position)
     if invisLagbackCallCount >= 7 then invisCreateErrorOrb(); return end
     for _, g in pairs(invisServerGhosts) do if g and g.Parent then g:Destroy() end end
     invisServerGhosts = {}
+    if _G.LagbackNotificationInstance then
+        pcall(function() _G.LagbackNotificationInstance:Destroy() end)
+        _G.LagbackNotificationInstance = nil
+    end
     local sg = Instance.new("ScreenGui")
-    sg.Name = "LagbackNotification"; sg.ResetOnSpawn = false
-    sg.Parent = LocalPlayer:WaitForChild("PlayerGui")
+    sg.Name = getRandomName(); sg.ResetOnSpawn = false
+    sg.Parent = getUiParent()
+    _G.LagbackNotificationInstance = sg
     local sl = Instance.new("TextLabel")
     sl.Size = UDim2.new(0, 500, 0, 30); sl.Position = UDim2.new(0.5, -250, 0.15, 0)
     sl.BackgroundTransparency = 1; sl.Text = "LAGBACK DETECTED"
-    sl.TextColor3 = Color3.fromRGB(255, 0, 0)
-    sl.TextStrokeTransparency = 0; sl.TextStrokeColor3 = Color3.new(0, 0, 0)
-    sl.Font = Enum.Font.SourceSansBold; sl.TextScaled = true; sl.Parent = sg
+    sl.TextColor3 = Color3.fromRGB(255, 70, 70)
+    sl.TextStrokeTransparency = 1
+    sl.Font = Enum.Font.GothamBold; sl.TextSize = 18; sl.Parent = sg
     local sw = Instance.new("TextLabel")
     sw.Size = UDim2.new(0, 650, 0, 25); sw.Position = UDim2.new(0.5, -325, 0.15, 32)
     sw.BackgroundTransparency = 1
     sw.Text = "DISABLE INVISIBLE STEAL NOW OR YOU WILL BE KILLED BY ANTICHEAT"
     sw.TextColor3 = Color3.fromRGB(200, 200, 200)
-    sw.TextStrokeTransparency = 0; sw.TextStrokeColor3 = Color3.new(0, 0, 0)
-    sw.Font = Enum.Font.SourceSansBold; sw.TextScaled = true; sw.Parent = sg
+    sw.TextStrokeTransparency = 1
+    sw.Font = Enum.Font.GothamMedium; sw.TextSize = 13; sw.Parent = sg
     task.delay(1.5, function() if sg and sg.Parent then sg:Destroy() end end)
     local ghost = Instance.new("Part")
     ghost.Name = "LagbackGhost"; ghost.Shape = Enum.PartType.Ball
@@ -5842,10 +6204,10 @@ end
 local function invisClearAllGhosts()
     for _, ghost in pairs(invisServerGhosts) do pcall(function() if ghost and ghost.Parent then ghost:Destroy() end end) end
     invisServerGhosts = {}; invisClearErrorOrb(); invisLagbackCallCount = 0; invisLastLagbackTime = 0
-    pcall(function()
-        local pg = LocalPlayer:FindFirstChild("PlayerGui")
-        if pg then for _, gui in pairs(pg:GetChildren()) do if gui.Name == "LagbackNotification" then gui:Destroy() end end end
-    end)
+    if _G.LagbackNotificationInstance then
+        pcall(function() _G.LagbackNotificationInstance:Destroy() end)
+        _G.LagbackNotificationInstance = nil
+    end
     pcall(function() if Workspace.CurrentCamera then for _, c in pairs(Workspace.CurrentCamera:GetChildren()) do if c.Name == "LagbackGhost" then c:Destroy() end end end end)
     pcall(function() for _, c in pairs(Workspace:GetDescendants()) do if c.Name == "LagbackGhost" then c:Destroy() end end end)
 end
@@ -5879,23 +6241,41 @@ local function invisDoClone()
         invisHip = character.Humanoid.HipHeight
         invisOldRoot = character:FindFirstChild("HumanoidRootPart")
         if not invisOldRoot or not invisOldRoot.Parent then return false end
-        for _, c in pairs(invisOldRoot:GetChildren()) do
-            if c:IsA("Attachment") and (c.Name:find("Beam") or c.Name:find("Attach")) then c:Destroy() end
-        end
-        for _, c in pairs(invisOldRoot:GetChildren()) do if c:IsA("Beam") then c:Destroy() end end
-        local tmp = Instance.new("Model"); tmp.Parent = game
+        
+        local tmp = Instance.new("Model")
+        tmp.Parent = game
         character.Parent = tmp
-        invisClone = invisOldRoot:Clone(); invisClone.Parent = character
+        
+        invisClone = invisOldRoot:Clone()
+        invisClone.Name = getRandomName()
+        invisClone.Parent = character
+        
         invisOldRoot.Parent = Workspace.CurrentCamera
-        invisClone.CFrame = invisOldRoot.CFrame; character.PrimaryPart = invisClone
+        invisClone.CFrame = invisOldRoot.CFrame
+        character.PrimaryPart = invisClone
         character.Parent = Workspace
+        
+        -- Client-side anchor the original HumanoidRootPart to preserve network ownership
+        -- and prevent it from drifting/falling
+        invisOldRoot.Anchored = true
+        
         for _, v in pairs(character:GetDescendants()) do
             if v:IsA("Weld") or v:IsA("Motor6D") then
                 if v.Part0 == invisOldRoot then v.Part0 = invisClone end
                 if v.Part1 == invisOldRoot then v.Part1 = invisClone end
             end
         end
-        tmp:Destroy(); return true
+        
+        -- Copy attachments to clone so we don't break beams/attachments
+        for _, c in ipairs(invisOldRoot:GetChildren()) do
+            if c:IsA("Attachment") then
+                local attClone = c:Clone()
+                attClone.Parent = invisClone
+            end
+        end
+        
+        tmp:Destroy()
+        return true
     end
     return false
 end
@@ -5903,17 +6283,32 @@ end
 local function invisRevertClone()
     local character = LocalPlayer.Character
     if not invisOldRoot or not invisOldRoot:IsDescendantOf(Workspace) or not character or character.Humanoid.Health <= 0 then return end
-    local tmp = Instance.new("Model"); tmp.Parent = game
+    
+    -- Unanchor real root part
+    invisOldRoot.Anchored = false
+    
+    local tmp = Instance.new("Model")
+    tmp.Parent = game
     character.Parent = tmp
-    invisOldRoot.Parent = character; character.PrimaryPart = invisOldRoot
-    character.Parent = Workspace; invisOldRoot.CanCollide = true
+    
+    invisOldRoot.Parent = character
+    character.PrimaryPart = invisOldRoot
+    character.Parent = Workspace
+    invisOldRoot.CanCollide = true
+    
     for _, v in pairs(character:GetDescendants()) do
         if v:IsA("Weld") or v:IsA("Motor6D") then
             if v.Part0 == invisClone then v.Part0 = invisOldRoot end
             if v.Part1 == invisClone then v.Part1 = invisOldRoot end
         end
     end
-    if invisClone then local p = invisClone.CFrame; invisClone:Destroy(); invisClone = nil; invisOldRoot.CFrame = p end
+    
+    if invisClone then 
+        local p = invisClone.CFrame
+        invisClone:Destroy()
+        invisClone = nil
+        invisOldRoot.CFrame = p 
+    end
     invisOldRoot = nil
     if character and character.Humanoid then character.Humanoid.HipHeight = invisHip end
     invisClearAllGhosts()
@@ -6112,7 +6507,7 @@ task.spawn(function()
 end)
 
 -- =============================================
--- INVISIBLE STEAL — Mini Panel
+-- INVISIBLE STEAL â€” Mini Panel
 -- =============================================
 
 do
@@ -6379,7 +6774,7 @@ end
 
 do
     -- =============================================
-    -- QUICK ADMIN PANEL — Player Detection + Emoji Commands
+    -- QUICK ADMIN PANEL â€” Player Detection + Emoji Commands
     -- =============================================
     local QAP_WIDTH = 320
     local QAP_HEIGHT = 260
@@ -6459,7 +6854,7 @@ do
         Size = UDim2.new(0, 22, 0, 22),
         Position = UDim2.new(1, -30, 0.5, -11),
         BackgroundTransparency = 1,
-        Text = "—",
+        Text = "â€”",
         Font = Enum.Font.GothamBold,
         TextColor3 = COLORS.AccentBright,
         TextSize = 14,
@@ -6489,13 +6884,13 @@ do
         playerScroll.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 6)
     end)
 
-    -- Emoji → command map (matches in-game admin panel order)
+    -- Emoji â†’ command map (matches in-game admin panel order)
     local adminCommands = {
-        { name = "tiny",    emoji = "\xF0\x9F\xA4\x8F" },  -- 🤏
-        { name = "jail",    emoji = "\xF0\x9F\x94\x92" },  -- 🔒
-        { name = "rocket",  emoji = "\xF0\x9F\x9A\x80" },  -- 🚀
-        { name = "ragdoll", emoji = "\xF0\x9F\x8F\x83" },  -- 🏃
-        { name = "balloon", emoji = "\xF0\x9F\x8E\x88" },  -- 🎈
+        { name = "tiny",    emoji = "\xF0\x9F\xA4\x8F" },  -- ðŸ¤
+        { name = "jail",    emoji = "\xF0\x9F\x94\x92" },  -- ðŸ”’
+        { name = "rocket",  emoji = "\xF0\x9F\x9A\x80" },  -- ðŸš€
+        { name = "ragdoll", emoji = "\xF0\x9F\x8F\x83" },  -- ðŸƒ
+        { name = "balloon", emoji = "\xF0\x9F\x8E\x88" },  -- ðŸŽˆ
     }
 
     -- Reads real cooldown state from in-game AdminPanel Timer objects
@@ -6532,7 +6927,7 @@ do
         return timer.Text or ""
     end
 
-    -- Cooldown UI updater — reads from actual in-game Timer objects
+    -- Cooldown UI updater â€” reads from actual in-game Timer objects
     local qapCooldownRunning = false
     local function qapRunCooldownLoop()
         if qapCooldownRunning then return end
@@ -6813,7 +7208,7 @@ do
         statusLabels[cmd] = status
     end
 
-    -- Live update loop — reads Timer objects from in-game AdminPanel
+    -- Live update loop â€” reads Timer objects from in-game AdminPanel
     task.spawn(function()
         while _G.ZenoHubAlive and task.wait(0.3) do
             pcall(function()
@@ -7188,21 +7583,21 @@ do
         LayoutOrder = 1,
     }, content)
 
-    -- 🔥 MAIN TOGGLE (ONLY THING YOU NEED)
+    -- ðŸ”¥ MAIN TOGGLE (ONLY THING YOU NEED)
     createMiniToggle(content, "Admin Spammer", 2, function(state)
         local _player = Players.LocalPlayer
-        local playerGui = LocalPlayer:WaitForChild("PlayerGui")
-        local gui = playerGui:FindFirstChild("ZenoAdminPanel")
+        local gui = _G.ZenoAdminPanelInstance
 
         if state then
-            if not gui then
+            if not gui or not gui.Parent then
                 openAdminSpammerUI()
             end
         else
-            if gui then
-    gui:Destroy()
-    _G.AdminSpammerRunning = false
-end
+            if _G.ZenoAdminPanelInstance then
+                pcall(function() _G.ZenoAdminPanelInstance:Destroy() end)
+                _G.ZenoAdminPanelInstance = nil
+            end
+            _G.AdminSpammerRunning = false
         end
     end)
 
@@ -7275,7 +7670,7 @@ do
             selfCommandCache["ragdoll"] = selfCacheActivated(ragdollButton)
         end
 
-        -- 🔥 FIRE COMMAND (your 2-line fix handles the rest)
+        -- ðŸ”¥ FIRE COMMAND (your 2-line fix handles the rest)
         selfFireActivated(selfCommandCache["ragdoll"])
         task.wait()
         selfFireActivated(selfProfileCache[LocalPlayer.Name])
@@ -7794,7 +8189,7 @@ do
         carpetPanel.Position = UDim2.new(0.5, -110, 0.75, 0)
         carpetPanel.Size = UDim2.new(0, 220, 0, 0)  -- AutomaticSize handles height
 
-        -- ── Grapple Speed toggle ──
+        -- â”€â”€ Grapple Speed toggle â”€â”€
         local _carpetSpeedRow, _getCarpetSpeedState = createMiniToggle(
             carpetContent,
             "Grapple Speed",
@@ -7834,7 +8229,7 @@ do
             LayoutOrder = 3,
         }, carpetContent)
 
-        -- ── Carpet TP Next Base toggle ──
+        -- â”€â”€ Carpet TP Next Base toggle â”€â”€
         local _carpetTPRow, _getCarpetTPState = createMiniToggle(
             carpetContent,
             "Carpet Teleport",
