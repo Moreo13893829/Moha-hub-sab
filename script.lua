@@ -17,7 +17,19 @@ local gethui = rawget(_G, "gethui") or function() return game:GetService("CoreGu
 local buildDexSettingsUI, buildMiniActionsUI, refreshAvailableList, ShowNotification, MakeDraggable, stopAntiRagdollV2, settingsGui, instantStealBtn, hasShownPriorityAlert, ShowPriorityAlert, listFrame, createPlayerRow, sortAdminPanelList, ProximityAPActive, removePlayer, isOnCooldown, runAdminCommand, activeCooldowns, setGlobalVisualCooldown, updateProximityAPButton, updateVisualState, Synchronizer
 
 local Theme = {}; local THEMES = {}
-if not game:IsLoaded() then game.Loaded:Wait() end
+if not game:IsLoaded() then
+    local loaded = false
+    task.spawn(function()
+        pcall(function()
+            game.Loaded:Wait()
+        end)
+        loaded = true
+    end)
+    local start = os.clock()
+    while not loaded and (os.clock() - start) < 5 do
+        task.wait(0.1)
+    end
+end
 pcall(function() game:GetService("Players").RespawnTime = 0 end)
 pcall(function() if setfpscap then setfpscap(9999) end end)
 local _privateBuild = false
@@ -39,44 +51,46 @@ local SharedState = {
     RefreshMobileScale = nil,
 }
 
-do
-    local syncPath = game:GetService('ReplicatedStorage'):WaitForChild("Packages"):WaitForChild("Synchronizer")
-    local Sync = require(syncPath :: any)
-    local patched = 0
+task.spawn(function()
+    pcall(function()
+        local syncPath = game:GetService('ReplicatedStorage'):WaitForChild("Packages"):WaitForChild("Synchronizer")
+        local Sync = require(syncPath :: any)
+        local patched = 0
 
-    local debug_getupvalues = (debug :: any).getupvalues or rawget(_G, "getupvalues")
-    local debug_setupvalue = (debug :: any).setupvalue or rawget(_G, "setupvalue")
+        local debug_getupvalues = (debug :: any).getupvalues or rawget(_G, "getupvalues")
+        local debug_setupvalue = (debug :: any).setupvalue or rawget(_G, "setupvalue")
 
-    for name, fn in pairs(Sync) do
-        if typeof(fn) ~= "function" then continue end
-        if isexecutorclosure(fn) then continue end
+        for name, fn in pairs(Sync) do
+            if typeof(fn) ~= "function" then continue end
+            if isexecutorclosure(fn) then continue end
 
-        if debug_getupvalues then
-            local ok, ups = pcall(debug_getupvalues, fn)
-            if ok then
-                for idx, val in pairs(ups) do
-                    if typeof(val) == "function" and not isexecutorclosure(val) then
-                        local ok2, innerUps = pcall(debug_getupvalues, val)
-                        if ok2 then
-                            local hasBoolean = false
-                            for _, v in pairs(innerUps) do
-                                if typeof(v) == "boolean" then
-                                    hasBoolean = true
-                                    break
+            if debug_getupvalues then
+                local ok, ups = pcall(debug_getupvalues, fn)
+                if ok then
+                    for idx, val in pairs(ups) do
+                        if typeof(val) == "function" and not isexecutorclosure(val) then
+                            local ok2, innerUps = pcall(debug_getupvalues, val)
+                            if ok2 then
+                                local hasBoolean = false
+                                for _, v in pairs(innerUps) do
+                                    if typeof(v) == "boolean" then
+                                        hasBoolean = true
+                                        break
+                                    end
                                 end
-                            end
-                            if hasBoolean and debug_setupvalue then
-                                debug_setupvalue(fn, idx, newcclosure(function() end))
-                                patched += 1
+                                if hasBoolean and debug_setupvalue then
+                                    debug_setupvalue(fn, idx, newcclosure(function() end))
+                                    patched += 1
+                                end
                             end
                         end
                     end
                 end
             end
         end
-    end
-    print("sphynx hub NAO E SOURCE DO LETHAL")
-end
+        print("sphynx hub NAO E SOURCE DO LETHAL")
+    end)
+end)
 
 local Services = {
     Players = game:GetService("Players"),
@@ -139,7 +153,32 @@ local VirtualInputManager = Services.VirtualInputManager
 local GuiService = Services.GuiService
 local TeleportService = Services.TeleportService
 -- LocalPlayer defined above
-local PlayerGui = gethui and gethui() or game:GetService('CoreGui')
+local PlayerGui
+do
+    local success, result
+    if gethui then
+        success, result = pcall(gethui)
+        if success and result then
+            PlayerGui = result
+        end
+    end
+    if not PlayerGui then
+        success, result = pcall(function()
+            return game:GetService("CoreGui")
+        end)
+        if success and result then
+            PlayerGui = result
+        end
+    end
+    if not PlayerGui then
+        success, result = pcall(function()
+            return LocalPlayer:WaitForChild("PlayerGui", 10) or LocalPlayer.PlayerGui
+        end)
+        if success and result then
+            PlayerGui = result
+        end
+    end
+end
 
 local Decrypted
 Decrypted = setmetatable({}, {
@@ -297,25 +336,34 @@ local DefaultConfig = {
 
 local Config = DefaultConfig
 
+Config = DefaultConfig
 if isfile and isfile(FileName) then
     pcall(function()
-        local ok, decoded = pcall(function() return HttpService:JSONDecode(readfile(FileName)) end)
-        if not ok then return end
-        for k, v in pairs(DefaultConfig) do
-            if decoded[k] == nil then decoded[k] = v end
-        end
-        if decoded.TpSettings then
-            for k, v in pairs(DefaultConfig.TpSettings) do
-                if decoded.TpSettings[k] == nil then decoded.TpSettings[k] = v end
+        local content = readfile(FileName)
+        if content and content ~= "" then
+            local decoded = HttpService:JSONDecode(content)
+            if type(decoded) == "table" then
+                for k, v in pairs(DefaultConfig) do
+                    if decoded[k] == nil then decoded[k] = v end
+                end
+                if type(decoded.TpSettings) ~= "table" then
+                    decoded.TpSettings = {}
+                end
+                for k, v in pairs(DefaultConfig.TpSettings) do
+                    if decoded.TpSettings[k] == nil then decoded.TpSettings[k] = v end
+                end
+                if type(decoded.Positions) ~= "table" then
+                    decoded.Positions = {}
+                end
+                for k, v in pairs(DefaultConfig.Positions) do
+                    if decoded.Positions[k] == nil then decoded.Positions[k] = v end
+                end
+                if type(decoded.Blacklist) ~= "table" then
+                    decoded.Blacklist = {}
+                end
+                Config = decoded
             end
         end
-        if decoded.Positions then
-            for k, v in pairs(DefaultConfig.Positions) do
-                if decoded.Positions[k] == nil then decoded.Positions[k] = v end
-            end
-        end
-        if type(decoded.Blacklist) ~= "table" then decoded.Blacklist = {} end
-        Config = decoded
     end)
 end
 Config.ProximityAP = false
@@ -362,7 +410,12 @@ local function getControls()
 	return playerModule:GetControls()
 end
 
-local _Controls = getControls()
+local _Controls
+task.spawn(function()
+    pcall(function()
+        _Controls = getControls()
+    end)
+end)
 
 local function kickPlayer()
     pcall(function()
@@ -5004,13 +5057,13 @@ end
 
 settingsGui = Instance.new("ScreenGui")
 settingsGui.Name = "SettingsUI"; settingsGui.ResetOnSpawn = false
-settingsGui.Parent = PlayerGui; settingsGui.Enabled = false
+settingsGui.Parent = PlayerGui; settingsGui.Enabled = true; settingsGui.DisplayOrder = 99999
 
 local sFrame = Instance.new("Frame")
 sFrame.Size = UDim2.new(0, 300, 0, 650)
 sFrame.Position = UDim2.new(Config.Positions.Settings.X, 0, Config.Positions.Settings.Y, 0)
 sFrame.BackgroundColor3 = Theme.Background; sFrame.BackgroundTransparency = 0.05
-sFrame.BorderSizePixel = 0; sFrame.ClipsDescendants = true; sFrame.Parent = settingsGui
+sFrame.BorderSizePixel = 0; sFrame.ClipsDescendants = true; sFrame.Parent = settingsGui; sFrame.Visible = true
 
 ApplyViewportUIScale(sFrame, 300, 650, 0.45, 0.85, true) -- Added true for isSettings
 AddMobileMinimize(sFrame, "SETTINGS")
@@ -6617,7 +6670,7 @@ task.spawn(function()
 		serverGhosts = {}
 		local sg = Instance.new("ScreenGui")
 		sg.Name = "ErrorOrbGui"; sg.ResetOnSpawn = false
-		sg.Parent = LocalPlayer:WaitForChild("PlayerGui")
+		sg.Parent = PlayerGui
 		local fr = Instance.new("Frame")
 		fr.Size = UDim2.new(0, 500, 0, 60)
 		fr.Position = UDim2.new(0.5, -250, 0.3, 0)
@@ -6649,7 +6702,7 @@ task.spawn(function()
 		serverGhosts = {}
 		local sg = Instance.new("ScreenGui")
 		sg.Name = "LagbackNotification"; sg.ResetOnSpawn = false
-		sg.Parent = LocalPlayer:WaitForChild("PlayerGui")
+		sg.Parent = PlayerGui
 		local sl = Instance.new("TextLabel")
 		sl.Size = UDim2.new(0, 500, 0, 30); sl.Position = UDim2.new(0.5, -250, 0.15, 0)
 		sl.BackgroundTransparency = 1; sl.Text = "LAGBACK DETECTED"
@@ -6692,7 +6745,7 @@ task.spawn(function()
 		for _, ghost in pairs(serverGhosts) do pcall(function() if ghost and ghost.Parent then ghost:Destroy() end end) end
 		serverGhosts = {}; clearErrorOrb(); lagbackCallCount = 0; lastLagbackTime = 0
 		pcall(function()
-			local pg = LocalPlayer:FindFirstChild("PlayerGui")
+			local pg = PlayerGui
 			if pg then for _, gui in pairs(pg:GetChildren()) do if gui.Name == "LagbackNotification" then gui:Destroy() end end end
 		end)
 		pcall(function() if Workspace.CurrentCamera then for _, c in pairs(Workspace.CurrentCamera:GetChildren()) do if c.Name == "LagbackGhost" then c:Destroy() end end end end)
@@ -9063,9 +9116,10 @@ function buildDexSettingsUI()
     local bsg = Instance.new("ScreenGui")
     bsg.Name = "DexSettings"
     bsg.ResetOnSpawn = false
-    bsg.DisplayOrder = 20
+    bsg.DisplayOrder = 99999
     bsg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     bsg.Parent = pg
+    bsg.Enabled = true
 
     -- ── cores base do tema ──
     local function C() return {
@@ -9094,7 +9148,7 @@ function buildDexSettingsUI()
     panel.BackgroundColor3 = C().BG
     panel.BackgroundTransparency = 0.08
     panel.BorderSizePixel = 0
-    panel.Visible = false
+    panel.Visible = true
     Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 10)
 
     local panStroke = Instance.new("UIStroke", panel)
