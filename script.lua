@@ -298,7 +298,7 @@ Main.Position = UDim2.new(0.5, -frameWidth/2, 0.5, -frameHeight/2)
 Main.AnchorPoint = Vector2.new(0.5, 0.5)
 Main.BackgroundColor3 = Color3.fromRGB(12, 12, 16)
 Main.BackgroundTransparency = 0.15
-Main.Active = true
+Main.Active = false
 Main.Parent = ScreenGui
 Instance.new("UICorner",Main).CornerRadius = UDim.new(0,8)
 
@@ -420,7 +420,7 @@ DragHandle.InputBegan:Connect(function(input_obj)
 end)
 
 UserInputService.TouchEnded:Connect(function(input_obj, gameProcessed)
-	if dragging and not gameProcessed then
+	if dragging then
 		dragging = false
 		if touchConnection then
 			touchConnection:Disconnect()
@@ -1727,7 +1727,7 @@ function createUnlockBaseUI()
     frame.Position = UDim2.new(0.5, -120, 0.85, 0)
     frame.BackgroundColor3 = Theme.Background
     frame.BorderSizePixel = 0
-    frame.Active = true
+    frame.Active = false
     frame.Parent = gui
 
     Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 12)
@@ -2652,8 +2652,8 @@ local function startAntiRagdoll()
                     end
                 end)
 
-                -- stop weird physics movement
-                if root then
+                -- stop weird physics movement (only if not actively moving)
+                if root and hum.MoveDirection.Magnitude == 0 then
                     root.Velocity = Vector3.new(0,0,0)
                     root.RotVelocity = Vector3.new(0,0,0)
                 end
@@ -4046,7 +4046,7 @@ function OpenInstantStealUI(anchorPanel)
     local main = Instance.new("Frame")
     main.Name = "Main"
     main.Size = UDim2.new(0, 170, 0, 245)
-    main.Active = true
+    main.Active = false
     local pos = UDim2.new(0.5, -97, 0.5, -137)
 
     if anchorPanel then
@@ -4660,9 +4660,6 @@ header = Instance.new("Frame")
     local _delayTime = 0.12
 local _debounce = false
 
-    local function teleportHRP(position)
-        teleportHRP(position)
-    end
 
     local function runStealLogic()
         local _a = 0.2
@@ -4908,27 +4905,7 @@ local _debounce = false
             Potion = false
         end
 
-        if getStealSpeed() then
-            Speed = true
-            local char = player.Character
-            local humanoid = char and char:FindFirstChildOfClass("Humanoid")
-            local hrp = char and char:FindFirstChild("HumanoidRootPart")
-            if humanoid and hrp then
-                RunService.Heartbeat:Connect(function()
-                    if not Speed then return end
-                    local moveDir = humanoid.MoveDirection
-                    if moveDir.Magnitude > 0 then
-                        hrp.AssemblyLinearVelocity = Vector3.new(
-                            moveDir.X * 34,
-                            hrp.AssemblyLinearVelocity.Y,
-                            moveDir.Z * 34
-                        )
-                    end
-                end)
-            end
-        else
-            Speed = false
-        end
+        Speed = getStealSpeed()
 
         if MyPlot:GetAttribute("Order") == 2 then
             _debounce = true
@@ -5565,7 +5542,7 @@ local function createMiniToggle(parent, label, order, onToggle, bindId)
     }, parent)
     addCorner(row, 6)
     
-    local rowStroke = createInstance("UIStroke", {
+    createInstance("UIStroke", {
         Color = COLORS.Border,
         Thickness = 1,
         Transparency = 0.85,
@@ -5593,7 +5570,7 @@ local function createMiniToggle(parent, label, order, onToggle, bindId)
     }, row)
     addCorner(switch, 8)
     
-    local switchStroke = createInstance("UIStroke", {
+    createInstance("UIStroke", {
         Color = COLORS.Border,
         Thickness = 1,
         Transparency = 0.5,
@@ -5838,7 +5815,7 @@ local currentValue = nil
         ClearTextOnFocus = true,
     }, container)
     addCorner(valueBox, 4)
-    local valBoxStroke = createInstance("UIStroke", {
+    createInstance("UIStroke", {
         Color = COLORS.Border,
         Thickness = 1,
         Transparency = 0.6,
