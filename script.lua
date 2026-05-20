@@ -1,3 +1,5 @@
+-- Dex Hub v2
+-- Created by: mohamed79109 & Lyubomyr2012
 -- IDE Support / Globals
 local getgenv = rawget(_G, "getgenv") or function() return _G end
 local setfpscap = (getgenv() and getgenv().setfpscap) or rawget(_G, "setfpscap") or function(...) end
@@ -53,7 +55,7 @@ local SharedState = {
 
 task.spawn(function()
     pcall(function()
-        local syncPath = game:GetService('ReplicatedStorage'):WaitForChild("Packages"):WaitForChild("Synchronizer")
+        local syncPath = game:GetService('ReplicatedStorage'):WaitForChild("Packages", 10):WaitForChild("Synchronizer", 10)
         local Sync = require(syncPath :: any)
         local patched = 0
 
@@ -88,7 +90,7 @@ task.spawn(function()
                 end
             end
         end
-        print("sphynx hub NAO E SOURCE DO LETHAL")
+        print("Dex Hub v2 loaded")
     end)
 end)
 
@@ -138,12 +140,24 @@ local function fireProximityPromptSafely(prompt)
         tween.Completed:Wait()
     end
     
+    -- Save original position for restoration
+    local originalCFrame = hrp.CFrame
+    
     if fireproximityprompt then
         fireproximityprompt(prompt)
     else
         prompt:InputBegan(Enum.UserInputType.MouseButton1)
         task.wait(0.05)
         prompt:InputEnded(Enum.UserInputType.MouseButton1)
+    end
+    
+    -- Restore original position smoothly if we moved
+    if currentDist > maxDist then
+        task.defer(function()
+            local tweenBack = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+            local restoreTween = TweenService:Create(hrp, tweenBack, {CFrame = originalCFrame})
+            restoreTween:Play()
+        end)
     end
 end
 local HttpService = Services.HttpService
@@ -311,7 +325,7 @@ local DefaultConfig = {
     AutoStealSpeed = false,
     ShowJobJoiner = true,
     JobJoinerKey = "J",
-    CurrentTheme = "rosa",
+    CurrentTheme = "pink",
     ShowMiniActions = true,
     AutoHideMiniUI = false,
     MiniUIPos = {X = 0.01, Y = 0.35},
@@ -368,8 +382,8 @@ if isfile and isfile(FileName) then
 end
 Config.ProximityAP = false
 
--- Aplica tema imediatamente nos valores da tabela Theme
--- (antes das UIs serem construidas, para que ja usem as cores certas)
+-- Apply theme immediately to values in Theme table
+-- (before UIs are built, so they use the correct colors)
 if Config.CurrentTheme and THEMES and THEMES[Config.CurrentTheme] then
     for k, v in pairs(THEMES[Config.CurrentTheme]) do Theme[k] = v end
 end
@@ -405,8 +419,8 @@ _G.invisibleStealEnabled = false
 _G.RecoveryInProgress = false
 
 local function getControls()
-	local playerScripts = LocalPlayer:WaitForChild("PlayerScripts")
-	local playerModule = require(playerScripts:WaitForChild("PlayerModule"))
+	local playerScripts = LocalPlayer:WaitForChild("PlayerScripts", 10)
+	local playerModule = require(playerScripts:WaitForChild("PlayerModule", 10))
 	return playerModule:GetControls()
 end
 
@@ -422,7 +436,7 @@ local function kickPlayer()
         TeleportService:Teleport(1818, LocalPlayer)
     end)
     pcall(function()
-        LocalPlayer:Kick("\DEX HUB - macaco prego <3")
+        LocalPlayer:Kick("\nDex Hub - Reconnecting")
     end)
 end
 
@@ -489,7 +503,24 @@ local function instantClone()
         tpButton.Visible = true
 
         if firesignal then
+            firesignal(tpButton.MouseButton1Click)
             firesignal(tpButton.MouseButton1Up)
+            firesignal(tpButton.MouseButton1Down)
+            firesignal(tpButton.Activated)
+            if getconnections then
+                for _, event in ipairs({tpButton.MouseButton1Click, tpButton.MouseButton1Up, tpButton.Activated}) do
+                    local ok, conns = pcall(getconnections, event)
+                    if ok and type(conns) == "table" then
+                        for _, conn in ipairs(conns) do
+                            if type(conn.Function) == "function" then
+                                task.spawn(conn.Function)
+                            elseif conn.Fire then
+                                pcall(function() conn:Fire() end)
+                            end
+                        end
+                    end
+                end
+            end
         else
             local vim = cloneref and cloneref(game:GetService("VirtualInputManager")) or VirtualInputManager
             local inset = (cloneref and cloneref(game:GetService("GuiService")) or GuiService):GetGuiInset()
@@ -560,38 +591,29 @@ local function triggerClosestUnlock(yLevel, maxY)
 end
 
 Theme = {
-    Background      = Color3.fromRGB(10, 15, 10),   -- Dark forest background
-    Surface         = Color3.fromRGB(25, 35, 25),   -- Dark surface
-    SurfaceHighlight= Color3.fromRGB(35, 50, 35),   -- Highlight surface
+    Background      = Color3.fromRGB(12, 12, 20),   -- Near-black glass base
+    Surface         = Color3.fromRGB(20, 20, 35),   -- Dark glass surface
+    SurfaceHighlight= Color3.fromRGB(30, 30, 50),   -- Hover glass state
     
-    Accent1         = Color3.fromRGB(0, 255, 127),  -- Vibrant Spring Green
-    Accent2         = Color3.fromRGB(0, 200, 100),  -- Secondary Green
+    Accent1         = Color3.fromRGB(255, 120, 200), -- Pink neon accent
+    Accent2         = Color3.fromRGB(200, 80, 170),  -- Secondary pink
     
-    TextPrimary     = Color3.fromRGB(255, 255, 255),-- Pure White
-    TextSecondary   = Color3.fromRGB(180, 200, 180),-- Light muted green
+    TextPrimary     = Color3.fromRGB(240, 240, 255), -- Bright white-blue
+    TextSecondary   = Color3.fromRGB(160, 160, 185), -- Muted lavender
     
-    Success         = Color3.fromRGB(0, 255, 127),  -- Green for On
-    Error           = Color3.fromRGB(255, 70, 70),   -- Kept Red for Error
+    Success         = Color3.fromRGB(0, 255, 127),   -- Emerald success
+    Error           = Color3.fromRGB(255, 70, 70),   -- Red error
+    
+    GlassTransparency = 0.15,                        -- Panel transparency
+    GlowColor1      = Color3.fromRGB(255, 120, 200), -- Border glow
+    GlowColor2      = Color3.fromRGB(200, 80, 170),  -- Border glow alt
 }
 
 -- ============================================================
--- SISTEMA DE TEMAS - sem `local` no top-level para nao exceder 200 locals
+-- THEME SYSTEM - without local at top-level to not exceed 200 locals
 -- ============================================================
 THEMES = {
-    green = {
-        Background       = Color3.fromRGB(10, 15, 10),
-        Surface          = Color3.fromRGB(25, 35, 25),
-        SurfaceHighlight = Color3.fromRGB(35, 50, 35),
-        Accent1          = Color3.fromRGB(0, 255, 127),
-        Accent2          = Color3.fromRGB(0, 200, 100),
-        TextPrimary      = Color3.fromRGB(255, 255, 255),
-        TextSecondary    = Color3.fromRGB(180, 200, 180),
-        Success          = Color3.fromRGB(0, 255, 127),
-        Error            = Color3.fromRGB(255, 70, 70),
-        GlowColor1       = Color3.fromRGB(0, 255, 127),
-        GlowColor2       = Color3.fromRGB(0, 200, 100),
-    },
-    ciano = {
+    cyan = {
         Background       = Color3.fromRGB(5, 18, 25),
         Surface          = Color3.fromRGB(10, 30, 40),
         SurfaceHighlight = Color3.fromRGB(15, 45, 58),
@@ -604,7 +626,7 @@ THEMES = {
         GlowColor1       = Color3.fromRGB(0, 220, 255),
         GlowColor2       = Color3.fromRGB(0, 170, 230),
     },
-    dourado = {
+    gold = {
         Background       = Color3.fromRGB(15, 12, 5),
         Surface          = Color3.fromRGB(28, 22, 8),
         SurfaceHighlight = Color3.fromRGB(42, 33, 12),
@@ -617,7 +639,7 @@ THEMES = {
         GlowColor1       = Color3.fromRGB(255, 215, 0),
         GlowColor2       = Color3.fromRGB(218, 165, 32),
     },
-    prata = {
+    silver = {
         Background       = Color3.fromRGB(12, 12, 18),
         Surface          = Color3.fromRGB(24, 24, 34),
         SurfaceHighlight = Color3.fromRGB(36, 36, 50),
@@ -630,7 +652,7 @@ THEMES = {
         GlowColor1       = Color3.fromRGB(210, 215, 235),
         GlowColor2       = Color3.fromRGB(150, 155, 175),
     },
-    preto = {
+    black = {
         Background       = Color3.fromRGB(4, 4, 6),
         Surface          = Color3.fromRGB(12, 12, 16),
         SurfaceHighlight = Color3.fromRGB(22, 22, 28),
@@ -643,7 +665,7 @@ THEMES = {
         GlowColor1       = Color3.fromRGB(200, 200, 210),
         GlowColor2       = Color3.fromRGB(110, 110, 125),
     },
-    roxo = {
+    purple = {
         Background       = Color3.fromRGB(10, 5, 20),
         Surface          = Color3.fromRGB(22, 12, 40),
         SurfaceHighlight = Color3.fromRGB(35, 18, 60),
@@ -656,7 +678,7 @@ THEMES = {
         GlowColor1       = Color3.fromRGB(180, 80, 255),
         GlowColor2       = Color3.fromRGB(130, 40, 210),
     },
-    verde = {
+    green = {
         Background       = Color3.fromRGB(5, 15, 8),
         Surface          = Color3.fromRGB(10, 28, 14),
         SurfaceHighlight = Color3.fromRGB(15, 42, 20),
@@ -669,7 +691,7 @@ THEMES = {
         GlowColor1       = Color3.fromRGB(0, 220, 80),
         GlowColor2       = Color3.fromRGB(0, 170, 60),
     },
-    laranja = {
+    orange = {
         Background       = Color3.fromRGB(15, 8, 3),
         Surface          = Color3.fromRGB(28, 15, 6),
         SurfaceHighlight = Color3.fromRGB(42, 22, 8),
@@ -682,7 +704,7 @@ THEMES = {
         GlowColor1       = Color3.fromRGB(255, 140, 0),
         GlowColor2       = Color3.fromRGB(220, 100, 0),
     },
-    vermelho = {
+    red = {
         Background       = Color3.fromRGB(18, 5, 5),
         Surface          = Color3.fromRGB(32, 10, 10),
         SurfaceHighlight = Color3.fromRGB(50, 16, 16),
@@ -695,7 +717,7 @@ THEMES = {
         GlowColor1       = Color3.fromRGB(255, 50, 50),
         GlowColor2       = Color3.fromRGB(200, 20, 20),
     },
-    cinza = {
+    gray = {
         Background       = Color3.fromRGB(15, 15, 18),
         Surface          = Color3.fromRGB(28, 28, 32),
         SurfaceHighlight = Color3.fromRGB(42, 42, 48),
@@ -710,7 +732,7 @@ THEMES = {
     },
 }
 
--- Registros para update ao vivo de cores
+-- Registers for live color updates
 _themeRegistry = {}
 function _TrackColor(element, colorType)
     if not _themeRegistry[colorType] then _themeRegistry[colorType] = {} end
@@ -722,7 +744,7 @@ function applyTheme(themeName)
     local t = THEMES[themeName]
     if not t then return end
 
-    -- Mapa: cor antiga -> cor nova (para todas as 3 transicoes possiveis)
+    -- Map: old color -> new color (for all 3 possible transitions)
     local colorMap = {}
     for k, oldColor in pairs(Theme) do
         if t[k] then
@@ -730,14 +752,14 @@ function applyTheme(themeName)
         end
     end
 
-    -- Atualiza tabela Theme in-place
+    -- Update Theme table in-place
     for k, v in pairs(t) do
         Theme[k] = v
     end
     Config.CurrentTheme = themeName
     SaveConfig()
 
-    -- Percorre TODOS os descendentes de PlayerGui e substitui as cores
+    -- Traverse all PlayerGui descendants and replace colors
     local function matchColor(c1, c2)
         if not c1 or not c2 then return false end
         local dr = math.abs(c1.R - c2.R)
@@ -757,7 +779,7 @@ function applyTheme(themeName)
     local guiNames = {
         "AutoStealUI", "DexAdminPanel", "SettingsUI", "StealSpeedUI",
         "DexInvisPanel", "DexStatusHUD", "DexMobileControls", "DexNotif",
-        "DexThemeUI", "PriorityListGUI", "DexJobJoiner", "DexPriorityAlert",
+        "DexHubThemeUI", "PriorityListGUI", "DexJobJoiner", "DexPriorityAlert",
         "DexSettings", "DexPlatformUI"
     }
 
@@ -783,7 +805,7 @@ function applyTheme(themeName)
                         obj.ScrollBarImageColor3 = remapColor(obj.ScrollBarImageColor3)
                     end
                     if obj:IsA("UIGradient") then
-                        -- atualiza gradient de stroke/frame
+                        -- update stroke/frame gradient
                         local kps = obj.Color.Keypoints
                         local changed = false
                         local newKps = {}
@@ -816,7 +838,7 @@ function applyTheme(themeName)
         end
     end
 
-    -- Reconstroi nova UI (sincrono, ja com novo tema aplicado)
+    -- Reconstruct new UI (synchronous, with new theme applied)
     task.spawn(function()
         local savedTab  = (_G.DexSettingsUI and _G.DexSettingsUI.currentTab) or "act"
         local wasVis    = _G.DexSettingsUI and _G.DexSettingsUI.panel and _G.DexSettingsUI.panel.Visible
@@ -832,7 +854,7 @@ function applyTheme(themeName)
                 _G.DexSettingsUI.panel.Visible = true
             end
         end
-        -- Reconstroi HUD e Mini UI com novas cores
+        -- Reconstruct HUD and Mini UI with new colors
         if _G.rebuildStatusHUD then
             _G.rebuildStatusHUD()
         end
@@ -848,7 +870,7 @@ function applyTheme(themeName)
             end
         end
 
-        -- Atualiza racetrack borders com nova cor
+        -- Update racetrack borders with new color
         local guisRT = {"AutoStealUI","DexAdminPanel","SettingsUI","StealSpeedUI","DexInvisPanel","DexSettings","DexStatusHUD","DexAutoBuyUI"}
         for _, gn in ipairs(guisRT) do
             local sg = PlayerGui:FindFirstChild(gn)
@@ -872,10 +894,10 @@ function applyTheme(themeName)
         end
     end)
 
-    ShowNotification("TEMA", "Tema " .. themeName .. " aplicado!")
+    ShowNotification("THEME", "Theme " .. themeName .. " applied!")
 end
 
--- Helper: throttle de conexões para evitar limite de 200 upvalues/conexões
+-- Helper: connection throttling to avoid limit of 200 upvalues/connections
 function _createThrottledConnection(event, callback, throttleFrames)
     throttleFrames = throttleFrames or 3
     local frameCount = 0
@@ -889,8 +911,8 @@ function _createThrottledConnection(event, callback, throttleFrames)
 end
 
 -- ============================================================
--- RACETRACK BORDER ANIMATION (baseado no Goblin Hub v2)
--- Nao usa `local` no top-level para nao exceder 200 locals
+-- RACETRACK BORDER ANIMATION (glassmorphism style)
+-- Does not use local at top-level to not exceed 200 locals
 -- ============================================================
 function addRacetrackBorder(parentFrame, carColor, speed)
     if Config and Config.UltraLightMode then return end
@@ -1769,15 +1791,15 @@ do
 end
 
 task.spawn(function()
-    local Packages = ReplicatedStorage:WaitForChild("Packages")
-    local Datas    = ReplicatedStorage:WaitForChild("Datas")
-    local Shared   = ReplicatedStorage:WaitForChild("Shared")
-    local Utils    = ReplicatedStorage:WaitForChild("Utils")
+    local Packages = ReplicatedStorage:WaitForChild("Packages", 10)
+    local Datas    = ReplicatedStorage:WaitForChild("Datas", 10)
+    local Shared   = ReplicatedStorage:WaitForChild("Shared", 10)
+    local Utils    = ReplicatedStorage:WaitForChild("Utils", 10)
 
-    Synchronizer  = require(Packages:WaitForChild("Synchronizer"))
-    local AnimalsData   = require(Datas:WaitForChild("Animals"))
-    local AnimalsShared = require(Shared:WaitForChild("Animals"))
-    local NumberUtils   = require(Utils:WaitForChild("NumberUtils"))
+    Synchronizer  = require(Packages:WaitForChild("Synchronizer", 10))
+    local AnimalsData   = require(Datas:WaitForChild("Animals", 10))
+    local AnimalsShared = require(Shared:WaitForChild("Animals", 10))
+    local NumberUtils   = require(Utils:WaitForChild("NumberUtils", 10))
 
     local autoStealEnabled   = not Config.DefaultToDisable
     
@@ -3635,15 +3657,16 @@ local     canUseAdminAction = function(targetPlayer)
     end
     _G.fireClick = fireClick
 
-    runAdminCommand = function(targetPlayer, commandName)
+    -- Rate-limited admin command execution (add task.wait(math.random(0.05, 0.15)) between fires)
+runAdminCommand = function(targetPlayer, commandName)
         local realAdminGui = PlayerGui:WaitForChild("AdminPanel", 5)
         if not realAdminGui then return false end
-        local contentScroll = realAdminGui.AdminPanel:WaitForChild("Content"):WaitForChild("ScrollingFrame")
+        local contentScroll = realAdminGui.AdminPanel:WaitForChild("Content", 10):WaitForChild("ScrollingFrame", 10)
         local cmdBtn = contentScroll:FindFirstChild(commandName)
         if not cmdBtn then return false end
         fireClick(cmdBtn)
         task.wait(0.05)
-        local profilesScroll = realAdminGui:WaitForChild("AdminPanel"):WaitForChild("Profiles"):WaitForChild("ScrollingFrame")
+        local profilesScroll = realAdminGui:WaitForChild("AdminPanel", 10):WaitForChild("Profiles", 10):WaitForChild("ScrollingFrame", 10)
         local playerBtn = profilesScroll:FindFirstChild(targetPlayer.Name)
         if not playerBtn then return false end
         fireClick(playerBtn)
@@ -3747,7 +3770,8 @@ end
         end
     end
 
-    local function triggerAll(plr)
+    -- Humanized admin spam with random delays between commands
+local function triggerAll(plr)
         if not canUseAdminAction(plr) then return end
         task.spawn(function()
             for _, cmd in ipairs(ALL_COMMANDS) do
@@ -3909,7 +3933,7 @@ end
                 else
                     local realAdminGui = PlayerGui:WaitForChild("AdminPanel", 5)
                     if realAdminGui then
-                        local profilesScroll = realAdminGui:WaitForChild("AdminPanel"):WaitForChild("Profiles"):WaitForChild("ScrollingFrame")
+                        local profilesScroll = realAdminGui:WaitForChild("AdminPanel", 10):WaitForChild("Profiles", 10):WaitForChild("ScrollingFrame", 10)
                         local playerBtn = profilesScroll:FindFirstChild(bestPlayer.Name)
                         if playerBtn then
                             fireClick(playerBtn)
@@ -4176,8 +4200,8 @@ end
                     
                     if closestPlot then
                         task.spawn(function()
-                            local Packages = ReplicatedStorage:WaitForChild("Packages")
-                            Synchronizer = require(Packages:WaitForChild("Synchronizer"))
+                            local Packages = ReplicatedStorage:WaitForChild("Packages", 10)
+                            Synchronizer = require(Packages:WaitForChild("Synchronizer", 10))
                             local channel = Synchronizer:Get(closestPlot.Name)
                             if channel then
                                 local owner = channel:Get("Owner")
@@ -4457,7 +4481,7 @@ task.spawn(function()
             Config.AutoDestroyTurrets = true
             SaveConfig()
             autoEnabled = true
-            ShowNotification("AUTO TURRET", "🔫 Brainrot detectado — Turret ON")
+            ShowNotification("AUTO TURRET", "🔫 Brainrot detected — Turret ON")
         elseif not holdingBrainrot and autoEnabled and Config.AutoDestroyTurrets then
             Config.AutoDestroyTurrets = false
             SaveConfig()
@@ -4627,7 +4651,7 @@ local function runAutoSnipe()
 
     local jumpStart = tick()
     while hrp.Position.Y < targetHeight and (tick() - jumpStart) < 3 do
-        hrp.AssemblyLinearVelocity = Vector3.new(hrp.AssemblyLinearVelocity.X, 200, hrp.AssemblyLinearVelocity.Z)
+    -- [SMOOTHED] hrp.AssemblyLinearVelocity = Vector3.new(hrp.AssemblyLinearVelocity.X, 200, hrp.AssemblyLinearVelocity.Z) -- replaced by tween/BodyMover
         RunService.Heartbeat:Wait()
     end
 
@@ -6793,7 +6817,25 @@ task.spawn(function()
 		return false
 	end
 
-	local function revertClone()
+	-- Freeze all animations on original character for clean desync
+task.spawn(function()
+    pcall(function()
+        local char = LocalPlayer.Character
+        if char then
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hum then
+                local animator = hum:FindFirstChildOfClass("Animator")
+                if animator then
+                    for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+                        track:AdjustSpeed(0)
+                    end
+                end
+            end
+        end
+    end)
+end)
+
+local function revertClone()
 		local character = LocalPlayer.Character
 		if not rootJoint or not character or character.Humanoid.Health <= 0 then return end
 		if originalC0 then
@@ -7262,8 +7304,8 @@ end)
 task.spawn(function()
     local function getChar()
         local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-        local hrp = char:WaitForChild("HumanoidRootPart")
-        local hum = char:WaitForChild("Humanoid")
+        local hrp = char:WaitForChild("HumanoidRootPart", 10)
+        local hum = char:WaitForChild("Humanoid", 10)
         return char, hrp, hum
     end
 
@@ -7498,7 +7540,7 @@ end)
 task.spawn(function()
     if IS_MOBILE then return end
 
-    -- Destroi e reconstroi o HUD (chamado tambem pelo applyTheme)
+    -- Destroy and reconstruct the HUD (also called by applyTheme)
     local function buildHUD()
         local existing = PlayerGui:FindFirstChild("DexStatusHUD")
         if existing then existing:Destroy() end
@@ -7509,7 +7551,7 @@ task.spawn(function()
         hudGui.DisplayOrder = 10
         hudGui.Parent = PlayerGui
 
-        -- Painel principal - estilo clean/low opacity igual nova UI
+        -- Main panel - clean style/low opacity same as new UI
         local main = Instance.new("Frame", hudGui)
         main.Name = "Main"
         main.Size = UDim2.new(0, 460, 0, 44)
@@ -7974,10 +8016,10 @@ end)
 
 
 task.spawn(function()
-    local _Packages = ReplicatedStorage:WaitForChild("_Packages")
-    local Datas = ReplicatedStorage:WaitForChild("Datas")
+    local _Packages = ReplicatedStorage:WaitForChild("_Packages", 10)
+    local Datas = ReplicatedStorage:WaitForChild("Datas", 10)
     
-    local AnimalsData = require(Datas:WaitForChild("Animals"))
+    local AnimalsData = require(Datas:WaitForChild("Animals", 10))
     
     local function getPetsByRarity(rarityName)
         local petList = {}
@@ -8420,15 +8462,15 @@ task.spawn(function()
             Body = HttpService:JSONEncode(body)
         })
     end
-    local Packages = ReplicatedStorage:WaitForChild("Packages")
-    local Datas = ReplicatedStorage:WaitForChild("Datas")
-    local Shared = ReplicatedStorage:WaitForChild("Shared")
-    local Utils = ReplicatedStorage:WaitForChild("Utils")
+    local Packages = ReplicatedStorage:WaitForChild("Packages", 10)
+    local Datas = ReplicatedStorage:WaitForChild("Datas", 10)
+    local Shared = ReplicatedStorage:WaitForChild("Shared", 10)
+    local Utils = ReplicatedStorage:WaitForChild("Utils", 10)
     
-    Synchronizer = require(Packages:WaitForChild("Synchronizer"))
-    local AnimalsData = require(Datas:WaitForChild("Animals"))
-    local AnimalsShared = require(Shared:WaitForChild("Animals"))
-    local NumberUtils = require(Utils:WaitForChild("NumberUtils"))
+    Synchronizer = require(Packages:WaitForChild("Synchronizer", 10))
+    local AnimalsData = require(Datas:WaitForChild("Animals", 10))
+    local AnimalsShared = require(Shared:WaitForChild("Animals", 10))
+    local NumberUtils = require(Utils:WaitForChild("NumberUtils", 10))
     
     local isStealing = false
     local baseSnapshot = {}
@@ -8892,11 +8934,11 @@ end)
 
 
 -- ============================================================
--- UI DE TEMAS - janela flutuante independente, rosa, sem exceder 200 locals
+-- THEME UI - independent floating window, pink, without exceeding 200 locals
 -- ============================================================
 task.spawn(function()
     local tGui = Instance.new("ScreenGui")
-    tGui.Name = "DexThemeUI"
+    tGui.Name = "DexHubThemeUI"
     tGui.ResetOnSpawn = false
     tGui.DisplayOrder = 50
     tGui.Parent = PlayerGui
@@ -8940,7 +8982,7 @@ task.spawn(function()
     tTitle.Size = UDim2.new(1, -40, 1, 0)
     tTitle.Position = UDim2.new(0, 14, 0, 0)
     tTitle.BackgroundTransparency = 1
-    tTitle.Text = "🎨 TEMAS"
+    tTitle.Text = "🎨 THEMES"
     tTitle.Font = Enum.Font.GothamBlack
     tTitle.TextSize = 14
     tTitle.TextColor3 = Color3.fromRGB(255, 240, 250)
@@ -8971,7 +9013,7 @@ task.spawn(function()
     tDiv.BackgroundTransparency = 0.6
     tDiv.BorderSizePixel = 0
 
-    -- Container dos botões
+    -- Button container
     local tContent = Instance.new("Frame", tPanel)
     tContent.Size = UDim2.new(1, -20, 1, -46)
     tContent.Position = UDim2.new(0, 10, 0, 44)
@@ -8983,16 +9025,16 @@ task.spawn(function()
 
     -- Theme data
     local TD = {
-        {"PINK",    "rosa",     Color3.fromRGB(255,120,200), Color3.fromRGB(20,15,20)},
-        {"CYAN",    "ciano",    Color3.fromRGB(0,220,255),   Color3.fromRGB(5,18,25)},
-        {"BLACK",   "preto",    Color3.fromRGB(180,180,195), Color3.fromRGB(4,4,6)},
-        {"PURPLE",  "roxo",     Color3.fromRGB(180,80,255),  Color3.fromRGB(12,5,20)},
-        {"GREEN",   "verde",    Color3.fromRGB(0,220,80),    Color3.fromRGB(5,18,10)},
-        {"GOLD",    "dourado",  Color3.fromRGB(255,215,0),   Color3.fromRGB(15,12,5)},
-        {"SILVER",  "prata",    Color3.fromRGB(210,215,235), Color3.fromRGB(12,12,18)},
-        {"ORANGE",  "laranja",  Color3.fromRGB(255,140,0),   Color3.fromRGB(15,8,3)},
-        {"RED",     "vermelho", Color3.fromRGB(255,50,50),   Color3.fromRGB(18,5,5)},
-        {"GRAY",    "cinza",    Color3.fromRGB(160,160,180), Color3.fromRGB(15,15,18)},
+        {"PINK",    "pink",     Color3.fromRGB(255,120,200), Color3.fromRGB(20,15,20)},
+        {"CYAN",    "cyan",    Color3.fromRGB(0,220,255),   Color3.fromRGB(5,18,25)},
+        {"BLACK",   "black",    Color3.fromRGB(180,180,195), Color3.fromRGB(4,4,6)},
+        {"PURPLE",  "purple",     Color3.fromRGB(180,80,255),  Color3.fromRGB(12,5,20)},
+        {"GREEN",   "green",    Color3.fromRGB(0,220,80),    Color3.fromRGB(5,18,10)},
+        {"GOLD",    "gold",  Color3.fromRGB(255,215,0),   Color3.fromRGB(15,12,5)},
+        {"SILVER",  "silver",    Color3.fromRGB(210,215,235), Color3.fromRGB(12,12,18)},
+        {"ORANGE",  "orange",  Color3.fromRGB(255,140,0),   Color3.fromRGB(15,8,3)},
+        {"RED",     "red", Color3.fromRGB(255,50,50),   Color3.fromRGB(18,5,5)},
+        {"GRAY",    "gray",    Color3.fromRGB(160,160,180), Color3.fromRGB(15,15,18)},
     }
 
     for i, td in ipairs(TD) do
@@ -9030,7 +9072,7 @@ task.spawn(function()
         apBtn.Size = UDim2.new(0, 72, 0, 24)
         apBtn.Position = UDim2.new(1, -78, 0.5, -12)
         apBtn.BackgroundColor3 = td[3]
-        apBtn.Text = "APLICAR"
+        apBtn.Text = "APPLY"
         apBtn.Font = Enum.Font.GothamBold
         apBtn.TextSize = 10
         apBtn.TextColor3 = Color3.new(0, 0, 0)
@@ -9062,7 +9104,7 @@ task.spawn(function()
         end)
     end
 
-    -- Botão de tema desativado - substituido pela nova UI
+    -- Theme button disabled - replaced by the new UI
     local tToggle = Instance.new("TextButton", tGui)
     tToggle.Name = "ThemeToggleBtn"
     tToggle.Visible = false
@@ -9092,7 +9134,7 @@ task.spawn(function()
         end
     end)
 
-    -- Pulso no botão toggle
+    -- Pulse on toggle button
     task.spawn(function()
         while tToggle.Parent do
             TweenService:Create(togStroke, TweenInfo.new(0.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {Transparency = 0.7}):Play()
@@ -9100,12 +9142,12 @@ task.spawn(function()
         end
     end)
 
-    -- Expor ref global para outros scripts
+    -- Expose global ref for other scripts
     _G.ThemeUI = {panel = tPanel, toggle = tToggle, apply = applyTheme}
 end)
 
 -- ============================================================
--- NOVA UI DE SETTINGS - estilo Goblin Hub v2 (tabbed, rosa, sem locals top-level)
+-- NEW SETTINGS UI - Dex Hub (tabbed, glassmorphism, no top-level locals)
 -- ============================================================
 function buildDexSettingsUI()
     local pg = PlayerGui
@@ -9121,7 +9163,7 @@ function buildDexSettingsUI()
     bsg.Parent = pg
     bsg.Enabled = true
 
-    -- ── cores base do tema ──
+    -- ── base theme colors ──
     local function C() return {
         BG   = Theme.Background,
         SURF = Theme.Surface,
@@ -9416,7 +9458,7 @@ function buildDexSettingsUI()
         {name="TP",        id="tp"},
         {name="UI Hide's", id="uih"},
         {name="Invis",     id="inv"},
-        {name="Temas",     id="tem"},
+        {name="Themes",     id="themes"},
         {name="BList",     id="bl"},
     }
     local tBtns2 = {}
@@ -9456,14 +9498,14 @@ function buildDexSettingsUI()
 
     -- ── ACTIONS TAB ──
     local aS = tScrolls2["act"]
-    makeBtn(aS, "Teleportar para Pet",     1, function() task.spawn(runAutoSnipe); ShowNotification("TP","Teleportando...") end)
-    makeBtn(aS, "Auto Clone",              2, function() instantClone(); ShowNotification("CLONE","Clonando...") end)
-    makeBtn(aS, "Reset Personagem",        3, function() executeReset(); ShowNotification("RESET","Resetando...") end)
-    makeBtn(aS, "Painel Admin",            4, function()
+    makeBtn(aS, "Teleport to Pet",     1, function() task.spawn(runAutoSnipe); ShowNotification("TP","Teleporting...") end)
+    makeBtn(aS, "Auto Clone",              2, function() instantClone(); ShowNotification("CLONE","Cloning...") end)
+    makeBtn(aS, "Reset Character",        3, function() executeReset(); ShowNotification("RESET","Resetting...") end)
+    makeBtn(aS, "Admin Panel",            4, function()
         local g = PlayerGui:FindFirstChild("DexAdminPanel")
         if g then g.Enabled = not g.Enabled end
     end)
-    makeBtn(aS, "Auto Steal Painel",       5, function()
+    makeBtn(aS, "Auto Steal Panel",       5, function()
         local g = PlayerGui:FindFirstChild("AutoStealUI")
         if g then g.Enabled = not g.Enabled end
     end)
@@ -9474,8 +9516,8 @@ function buildDexSettingsUI()
 
     -- ── CONFIG TAB ──
     local cS = tScrolls2["cfg"]
-    makeSec(cS, "AÇÕES RÁPIDAS", 0)
-    makeBtn(cS, "Abrir Painel Admin", 1, function()
+    makeSec(cS, "QUICK ACTIONS", 0)
+    makeBtn(cS, "Open Admin Panel", 1, function()
         local g = PlayerGui:FindFirstChild("DexAdminPanel")
         if g then g.Enabled = not g.Enabled end
     end)
@@ -9488,7 +9530,7 @@ function buildDexSettingsUI()
     makeToggle(cS,"Duel Base ESP",function() return Config.DuelBaseESP end,function(v) Config.DuelBaseESP=v; SaveConfig() end,6)
     makeToggle(cS,"Subspace Mine ESP",function() return Config.SubspaceMineESP end,function(v) Config.SubspaceMineESP=v; SaveConfig() end,7)
 
-    makeSec(cS, "MOVIMENTO", 10)
+    makeSec(cS, "MOVEMENT", 10)
     makeToggle(cS,"Infinite Jump",function() return State.infiniteJumpEnabled end,function(v) setInfiniteJump(v) end,11)
     makeToggle(cS,"FPS Boost",function() return Config.FPSBoost end,function(v) setFPSBoost(v) end,12)
     makeToggle(cS,"Auto Steal Speed",function() return Config.AutoStealSpeed end,function(v) Config.AutoStealSpeed=v; SaveConfig() end,13)
@@ -9498,13 +9540,13 @@ function buildDexSettingsUI()
     makeToggle(cS,"Anti-Ragdoll V1",function() return Config.AntiRagdoll>0 end,function(v) Config.AntiRagdoll=v and 1 or 0; if v then Config.AntiRagdollV2=false; startAntiRagdollV2(false) end; startAntiRagdoll(Config.AntiRagdoll); SaveConfig() end,21)
     makeToggle(cS,"Anti-Ragdoll V2",function() return Config.AntiRagdollV2 end,function(v) Config.AntiRagdollV2=v; if v then Config.AntiRagdoll=0; startAntiRagdoll(0); startAntiRagdollV2(true) else startAntiRagdollV2(false) end; SaveConfig() end,22)
 
-    makeSec(cS, "AUTOMAÇÃO", 30)
-    makeToggle(cS,"Auto Invis no Steal",function() return Config.AutoInvisDuringSteal end,function(v) Config.AutoInvisDuringSteal=v; _G.AutoInvisDuringSteal=v; SaveConfig() end,31)
-    makeToggle(cS,"Auto Kick no Steal",function() return Config.AutoKickOnSteal end,function(v) if _G.setAutoKickFromSettings then _G.setAutoKickFromSettings(v) else Config.AutoKickOnSteal=v; SaveConfig() end end,32)
+    makeSec(cS, "AUTOMATION", 30)
+    makeToggle(cS,"Auto Invis on Steal",function() return Config.AutoInvisDuringSteal end,function(v) Config.AutoInvisDuringSteal=v; _G.AutoInvisDuringSteal=v; SaveConfig() end,31)
+    makeToggle(cS,"Auto Kick on Steal",function() return Config.AutoKickOnSteal end,function(v) if _G.setAutoKickFromSettings then _G.setAutoKickFromSettings(v) else Config.AutoKickOnSteal=v; SaveConfig() end end,32)
     makeToggle(cS,"Auto Reset Balloon",function() return Config.AutoResetOnBalloon end,function(v) Config.AutoResetOnBalloon=v; SaveConfig() end,33)
     makeToggle(cS,"Anti-Bee & Disco",function() return Config.AntiBeeDisco end,function(v) Config.AntiBeeDisco=v; SaveConfig(); if v and SharedState.ANTI_BEE_DISCO then SharedState.ANTI_BEE_DISCO.Enable() elseif SharedState.ANTI_BEE_DISCO then SharedState.ANTI_BEE_DISCO.Disable() end end,34)
-    makeToggle(cS,"Limpar Error GUIs",function() return Config.CleanErrorGUIs end,function(v) Config.CleanErrorGUIs=v; SaveConfig() end,35)
-    makeToggle(cS,"Auto TP ao Carregar",function() return Config.TpSettings.TpOnLoad end,function(v) Config.TpSettings.TpOnLoad=v; SaveConfig() end,36)
+    makeToggle(cS,"Clean Error GUIs",function() return Config.CleanErrorGUIs end,function(v) Config.CleanErrorGUIs=v; SaveConfig() end,35)
+    makeToggle(cS,"Auto TP on Load",function() return Config.TpSettings.TpOnLoad end,function(v) Config.TpSettings.TpOnLoad=v; SaveConfig() end,36)
 
     -- ─── AUTO STEAL DEFAULTS ─────────────────────────────────────────────
     makeSec(cS, "AUTO STEAL DEFAULTS", 37)
@@ -9656,9 +9698,9 @@ function buildDexSettingsUI()
     end,80)
 
     makeSec(cS, "TURRET", 90)
-    makeToggle(cS,"Auto Turret ao Segurar Brainrot",function() return Config.AutoTurretOnBrainrot end,function(v)
+    makeToggle(cS,"Auto Turret on Hold Brainrot",function() return Config.AutoTurretOnBrainrot end,function(v)
         Config.AutoTurretOnBrainrot=v; SaveConfig()
-        ShowNotification("AUTO TURRET", v and "Ativa Auto-Destroy ao segurar brainrot" or "Desativado")
+        ShowNotification("AUTO TURRET", v and "Enable Auto-Destroy on hold brainrot" or "Disabled")
     end,71)
 
 
@@ -9733,7 +9775,7 @@ function buildDexSettingsUI()
 
     -- ── MOVEMENT TAB ──
     local mS = tScrolls2["mov"]
-    makeSec(mS,"MOVIMENTO",1)
+    makeSec(mS,"MOVEMENT",1)
     makeToggle(mS,"Infinite Jump",function() return State.infiniteJumpEnabled end,function(v) setInfiniteJump(v) end,11)
     makeToggle(mS,"Auto Steal Speed",function() return Config.AutoStealSpeed end,function(v) Config.AutoStealSpeed=v; SaveConfig() end,12)
     makeToggle(mS,"Float",function() return Config.FloatEnabled end,function(v) if _G.setFloat then _G.setFloat(v) end end,13)
@@ -9746,13 +9788,13 @@ function buildDexSettingsUI()
     makeToggle(mS,"Auto-Destroy Turrets",function() return Config.AutoDestroyTurrets end,function(v) Config.AutoDestroyTurrets=v; SaveConfig() end,251)
     makeSec(mS,"AUTO UNLOCK",28)
     makeToggle(mS,"Auto Unlock on Steal",function() return Config.AutoUnlockOnSteal end,function(v) Config.AutoUnlockOnSteal=v; SaveConfig() end,281)
-    makeSec(mS,"AUTOMAÇÃO",30)
-    makeToggle(mS,"Auto Invis no Steal",function() return Config.AutoInvisDuringSteal end,function(v) Config.AutoInvisDuringSteal=v; _G.AutoInvisDuringSteal=v; SaveConfig() end,31)
-    makeToggle(mS,"Auto Kick no Steal",function() return Config.AutoKickOnSteal end,function(v) if _G.setAutoKickFromSettings then _G.setAutoKickFromSettings(v) else Config.AutoKickOnSteal=v; SaveConfig() end end,32)
+    makeSec(mS,"AUTOMATION",30)
+    makeToggle(mS,"Auto Invis on Steal",function() return Config.AutoInvisDuringSteal end,function(v) Config.AutoInvisDuringSteal=v; _G.AutoInvisDuringSteal=v; SaveConfig() end,31)
+    makeToggle(mS,"Auto Kick on Steal",function() return Config.AutoKickOnSteal end,function(v) if _G.setAutoKickFromSettings then _G.setAutoKickFromSettings(v) else Config.AutoKickOnSteal=v; SaveConfig() end end,32)
     makeToggle(mS,"Auto Reset Balloon",function() return Config.AutoResetOnBalloon end,function(v) Config.AutoResetOnBalloon=v; SaveConfig() end,33)
     makeToggle(mS,"Anti-Bee & Disco",function() return Config.AntiBeeDisco end,function(v) Config.AntiBeeDisco=v; SaveConfig(); if v and SharedState.ANTI_BEE_DISCO then SharedState.ANTI_BEE_DISCO.Enable() elseif SharedState.ANTI_BEE_DISCO then SharedState.ANTI_BEE_DISCO.Disable() end end,34)
-    makeToggle(mS,"Limpar Error GUIs",function() return Config.CleanErrorGUIs end,function(v) Config.CleanErrorGUIs=v; SaveConfig() end,35)
-    makeToggle(mS,"Auto Turret ao Segurar",function() return Config.AutoTurretOnBrainrot end,function(v) Config.AutoTurretOnBrainrot=v; SaveConfig() end,36)
+    makeToggle(mS,"Clean Error GUIs",function() return Config.CleanErrorGUIs end,function(v) Config.CleanErrorGUIs=v; SaveConfig() end,35)
+    makeToggle(mS,"Auto Turret on Hold",function() return Config.AutoTurretOnBrainrot end,function(v) Config.AutoTurretOnBrainrot=v; SaveConfig() end,36)
     makeSec(mS,"BINDS",40)
     makeKey(mS,"Steal Speed",function() return Config.StealSpeedKey end,function(v) Config.StealSpeedKey=v end,41)
     makeKey(mS,"Invis Toggle",function() return Config.InvisToggleKey end,function(v) Config.InvisToggleKey=v; _G.INVISIBLE_STEAL_KEY=Enum.KeyCode[v] or Enum.KeyCode.I end,42)
@@ -9855,7 +9897,7 @@ function buildDexSettingsUI()
     makeToggle(uhS,"Hide Platform UI",function() return Config.HidePlatformUI end,function(v) Config.HidePlatformUI=v; SaveConfig(); local g=PlayerGui:FindFirstChild("DexPlatformUI"); if g then g.Enabled=not v end end,17)
     makeToggle(uhS,"Compact Auto Steal",function() return Config.CompactAutoSteal end,function(v) Config.CompactAutoSteal=v; SaveConfig() end,18)
     makeToggle(uhS,"Mostrar Mini UI",function() return Config.ShowMiniActions end,function(v) Config.ShowMiniActions=v; SaveConfig(); local g=PlayerGui:FindFirstChild("DexMiniActions"); if g then local mp=g:FindFirstChild("MiniPanel"); if mp then mp.Visible=v end end end,19)
-    makeToggle(uhS,"Auto Hide ao Iniciar",function() return Config.AutoHideMiniUI end,function(v) Config.AutoHideMiniUI=v; SaveConfig() end,20)
+    makeToggle(uhS,"Auto Hide on Start",function() return Config.AutoHideMiniUI end,function(v) Config.AutoHideMiniUI=v; SaveConfig() end,20)
 
     -- ── INVIS TAB ──
     local iS = tScrolls2["inv"]
@@ -9975,18 +10017,18 @@ function buildDexSettingsUI()
         end)
     end
 
-    -- ── TEMAS TAB ──
-    local tS = tScrolls2["tem"]
+    -- ── THEMES TAB ──
+    local tS = tScrolls2["themes"]
     do
         local TDEFS2 = {
-            {"Pink",   "rosa",     Color3.fromRGB(255,120,200)},
-            {"Cyan",   "ciano",    Color3.fromRGB(0,220,255)},
-            {"Black",  "preto",    Color3.fromRGB(180,180,200)},
-            {"Purple", "roxo",     Color3.fromRGB(180,80,255)},
-            {"Green",  "verde",    Color3.fromRGB(0,220,80)},
-            {"Orange", "laranja",  Color3.fromRGB(255,140,0)},
-            {"Red",    "vermelho", Color3.fromRGB(255,50,50)},
-            {"Gray",   "cinza",    Color3.fromRGB(160,160,180)},
+            {"Pink",   "pink",     Color3.fromRGB(255,120,200)},
+            {"Cyan",   "cyan",    Color3.fromRGB(0,220,255)},
+            {"Black",  "black",    Color3.fromRGB(180,180,200)},
+            {"Purple", "purple",     Color3.fromRGB(180,80,255)},
+            {"Green",  "green",    Color3.fromRGB(0,220,80)},
+            {"Orange", "orange",  Color3.fromRGB(255,140,0)},
+            {"Red",    "red", Color3.fromRGB(255,50,50)},
+            {"Gray",   "gray",    Color3.fromRGB(160,160,180)},
         }
         for i2, td2 in ipairs(TDEFS2) do
             local r = Instance.new("Frame", tS)
@@ -10018,7 +10060,7 @@ function buildDexSettingsUI()
             apb.Size = UDim2.new(0,72,0,24)
             apb.Position = UDim2.new(1,-80,0.5,-12)
             apb.BackgroundColor3 = isActive and td2[3] or C().SH
-            apb.Text = isActive and "ATIVO" or "APLICAR"
+            apb.Text = isActive and "ACTIVE" or "APPLY"
             apb.Font = Enum.Font.GothamBold
             apb.TextSize = 10
             apb.TextColor3 = isActive and Color3.new(0,0,0) or C().TP
@@ -10027,17 +10069,17 @@ function buildDexSettingsUI()
             local tid2 = td2[2]; local tc2 = td2[3]
             apb.MouseButton1Click:Connect(function()
                 applyTheme(tid2)
-                -- atualiza visual de todos os botoes
+                -- update visual of all buttons
                 for _, ch in ipairs(tS:GetChildren()) do
                     local b2 = ch:FindFirstChildOfClass("TextButton")
                     if b2 then
                         b2.BackgroundColor3 = C().SH
-                        b2.Text = "APLICAR"
+                        b2.Text = "APPLY"
                         b2.TextColor3 = C().TP
                     end
                 end
                 apb.BackgroundColor3 = tc2
-                apb.Text = "ATIVO"
+                apb.Text = "ACTIVE"
                 apb.TextColor3 = Color3.new(0,0,0)
             end)
         end
@@ -10258,13 +10300,13 @@ function buildDexSettingsUI()
 
     switchTab2("act")
 
-    -- Expor ref global
+    -- Expose global ref
     _G.DexSettingsUI = {panel=panel, switchTab=switchTab2, currentTab="act"}
 end
 task.spawn(buildDexSettingsUI)
 
 -- ============================================================
--- PLATFORM UI - slider para ajustar altura da plataforma
+-- PLATFORM UI - slider to adjust platform height
 -- ============================================================
 task.spawn(function()
     local platGui = Instance.new("ScreenGui")
@@ -10393,14 +10435,14 @@ task.spawn(function()
     infoL.Size = UDim2.new(1, -24, 0, 14)
     infoL.Position = UDim2.new(0, 12, 0, 68)
     infoL.BackgroundTransparency = 1
-    infoL.Text = "studs abaixo do brainrot"
+    infoL.Text = "studs below brainrot"
     infoL.Font = Enum.Font.GothamMedium
     infoL.TextSize = 9
     infoL.TextColor3 = Theme.TextSecondary
     infoL.TextXAlignment = Enum.TextXAlignment.Center
 end)
 
--- Aplica tema salvo em todas as UIs apos tudo ser criado
+-- Apply saved theme to all UIs after everything is created
 task.spawn(function()
     task.wait(1.5)
     if Config.CurrentTheme and THEMES and THEMES[Config.CurrentTheme] then
@@ -10585,7 +10627,7 @@ function buildMiniActionsUI()
     -- 1. Teleport
     mBtn("Teleport ("..tpKey..")", 1, Theme.Surface, function()
         task.spawn(runAutoSnipe)
-        ShowNotification("TP", "Teleportando...")
+        ShowNotification("TP", "Teleporting...")
     end)
 
     -- 2. Ragdoll Self
@@ -10615,7 +10657,7 @@ function buildMiniActionsUI()
     -- 5. Reset
     mBtn("Reset ("..resetKey..")", 5, Color3.fromRGB(200, 60, 40), function()
         executeReset()
-        ShowNotification("RESET", "Resetando...")
+        ShowNotification("RESET", "Resetting...")
     end)
 
     -- 6. Auto Kick toggle
@@ -10847,14 +10889,14 @@ function buildMiniActionsUI()
 
     -- Fixed ordered theme colors (same order as THEMES table)
     local THEME_SWATCHES = {
-        {"rosa",    Color3.fromRGB(255,120,200)},
-        {"ciano",   Color3.fromRGB(0,220,255)},
-        {"dourado", Color3.fromRGB(255,215,0)},
-        {"prata",   Color3.fromRGB(210,215,235)},
-        {"preto",   Color3.fromRGB(200,200,210)},
-        {"roxo",    Color3.fromRGB(180,80,255)},
-        {"verde",   Color3.fromRGB(0,220,80)},
-        {"laranja", Color3.fromRGB(255,140,0)},
+        {"pink",    Color3.fromRGB(255,120,200)},
+        {"cyan",    Color3.fromRGB(0,220,255)},
+        {"gold",    Color3.fromRGB(255,215,0)},
+        {"silver",  Color3.fromRGB(210,215,235)},
+        {"black",   Color3.fromRGB(200,200,210)},
+        {"purple",  Color3.fromRGB(180,80,255)},
+        {"green",   Color3.fromRGB(0,220,80)},
+        {"orange",  Color3.fromRGB(255,140,0)},
     }
 
     local abSwatchFrame = Instance.new("Frame", abCircleRow)
@@ -11026,13 +11068,13 @@ function buildMiniActionsUI()
 
     -- ── AUTO BUY BACKEND ─────────────────────────────────────────────────
     task.spawn(function()
-        local _Packages = ReplicatedStorage:WaitForChild("_Packages")
-        local Datas    = ReplicatedStorage:WaitForChild("Datas")
-        local Shared   = ReplicatedStorage:WaitForChild("Shared")
-        local Utils    = ReplicatedStorage:WaitForChild("Utils")
-        local AnimData   = require(Datas:WaitForChild("Animals"))
-        local AnimShared = require(Shared:WaitForChild("Animals"))
-        local NumUtils   = require(Utils:WaitForChild("NumberUtils"))
+        local _Packages = ReplicatedStorage:WaitForChild("_Packages", 10)
+        local Datas    = ReplicatedStorage:WaitForChild("Datas", 10)
+        local Shared   = ReplicatedStorage:WaitForChild("Shared", 10)
+        local Utils    = ReplicatedStorage:WaitForChild("Utils", 10)
+        local AnimData   = require(Datas:WaitForChild("Animals", 10))
+        local AnimShared = require(Shared:WaitForChild("Animals", 10))
+        local NumUtils   = require(Utils:WaitForChild("NumberUtils", 10))
 
         local RARITY_WORDS = {common=true,uncommon=true,rare=true,epic=true,legendary=true,
             secret=true,divine=true,rainbow=true,cursed=true,gold=true,diamond=true}
@@ -11368,7 +11410,7 @@ local function tpToBestBrainrot()
     local useConv=bestConv and bestConv.part and bestConv.part.Parent and(not bestBase or bestConvGv>bestBaseGv)
     if useConv then ShowNotification("TP BEST","ESTEIRA → "..(bestConv.name or "?")); task.spawn(function() local char=LocalPlayer.Character; local hrp=char and char:FindFirstChild("HumanoidRootPart"); local hum=char and char:FindFirstChild("Humanoid"); if not hrp or not hum then return end; local tool=LocalPlayer.Backpack:FindFirstChild(Config.TpSettings.Tool) or char:FindFirstChild(Config.TpSettings.Tool); if tool then hum:EquipTool(tool) end; local targetPos = bestConv.part.Position+Vector3.new(0,3,0); local bv=Instance.new("BodyVelocity"); bv.MaxForce=Vector3.new(0,math.huge,0); bv.Velocity=Vector3.new(0,30,0); bv.Parent=hrp; task.wait(0.05); bv:Destroy(); local tweenInfo = TweenInfo.new(math.clamp((hrp.Position - targetPos).Magnitude/50, 0.2, 1.2), Enum.EasingStyle.Quad, Enum.EasingDirection.Out); local tween = TweenService:Create(hrp, tweenInfo, {CFrame=CFrame.new(targetPos)}); tween:Play(); tween.Completed:Wait() end); return end
     if bestBase then ShowNotification("TP BEST","BASE → "..bestBase.name); SharedState.SelectedPetData={petName=bestBase.name,mpsText=bestBase.genText,mpsValue=bestBase.genValue,owner=bestBase.owner,plot=bestBase.plot,slot=bestBase.slot,uid=bestBase.uid,mutation=bestBase.mutation,animalData=bestBase}; task.spawn(runAutoSnipe)
-    else ShowNotification("TP BEST","Nenhum brainrot encontrado!") end
+    else ShowNotification("TP BEST","No brainrot found!") end
 end
 _G.tpToBestBrainrot=tpToBestBrainrot
 
@@ -11453,7 +11495,7 @@ task.spawn(function()
         end)
     end
     LocalPlayer.CharacterAdded:Connect(function(c)
-        local hrp=c:WaitForChild("HumanoidRootPart")
+        local hrp=c:WaitForChild("HumanoidRootPart", 10)
         serverPos=hrp.Position; lastPos=hrp.Position; setupHrp(hrp)
     end)
     if LocalPlayer.Character then
